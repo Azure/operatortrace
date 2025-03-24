@@ -114,7 +114,7 @@ func TestAutomaticAnnotationManagement(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 
 	assert.NoError(t, err)
@@ -164,13 +164,14 @@ func TestPassingTraceIdInNamespacedName(t *testing.T) {
 	key := client.ObjectKey{Name: "f620f5cad0af940c294f980c5366a6a1;45f359cdc1c8ab06;Configmap;configmap-10;pre-test-pod", Namespace: "default"}
 
 	// Create a spanId since no GET is being called to initialize the span
-	_, span, err := tracingClient.StartTrace(ctx, key, &corev1.Pod{})
+	_, span, err := tracingClient.StartTrace(ctx, &key, &corev1.Pod{})
 	defer span.End()
 
 	assert.NoError(t, err)
 	traceID := span.SpanContext().TraceID().String()
 
 	assert.Equal(t, "f620f5cad0af940c294f980c5366a6a1", traceID)
+	assert.Equal(t, "pre-test-pod", key.Name)
 }
 
 func TestChainReactionTracing(t *testing.T) {
@@ -202,7 +203,7 @@ func TestChainReactionTracing(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 
 	assert.NoError(t, err)
@@ -264,7 +265,7 @@ func TestUpdateWithTracing(t *testing.T) {
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 
 	assert.NoError(t, err)
@@ -356,7 +357,7 @@ func TestPatchWithTracing(t *testing.T) {
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 
 	assert.NoError(t, err)
@@ -418,7 +419,7 @@ func TestEndTrace(t *testing.T) {
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 
 	assert.NoError(t, err)
@@ -483,7 +484,7 @@ func TestEndTraceChangedAnnotation(t *testing.T) {
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 
 	assert.NoError(t, err)
@@ -520,7 +521,7 @@ func TestEndTraceChangedAnnotation(t *testing.T) {
 	// Initialize the TracingClient
 	tracingClientNew := NewTracingClient(k8sClient, k8sClient, tracer, logger)
 	ctxNew := context.Background()
-	ctxNew, spanNew, errNew := tracingClientNew.StartTrace(ctxNew, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctxNew, spanNew, errNew := tracingClientNew.StartTrace(ctxNew, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer spanNew.End()
 	assert.NoError(t, errNew)
 	traceIDNew := spanNew.SpanContext().TraceID().String()
@@ -560,7 +561,7 @@ func TestListWithTracing(t *testing.T) {
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 	assert.NoError(t, err)
 
@@ -595,7 +596,7 @@ func TestDeleteWithTracing(t *testing.T) {
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 	assert.NoError(t, err)
 	traceID := span.SpanContext().TraceID().String()
@@ -629,7 +630,7 @@ func TestDeleteAllOfWithTracing(t *testing.T) {
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
-	ctx, span, err := tracingClient.StartTrace(ctx, client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
+	ctx, span, err := tracingClient.StartTrace(ctx, &client.ObjectKey{Name: "pre-test-pod", Namespace: "default"}, &corev1.Pod{})
 	defer span.End()
 	assert.NoError(t, err)
 	traceID := span.SpanContext().TraceID().String()

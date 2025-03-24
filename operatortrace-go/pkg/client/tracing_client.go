@@ -39,7 +39,7 @@ type TracingClient interface {
 	client.Client
 	trace.Tracer
 	// We use this to which calls client.Client Get
-	StartTrace(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error)
+	StartTrace(ctx context.Context, key *client.ObjectKey, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error)
 	EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) (client.Object, error)
 	StartSpan(ctx context.Context, operationName string) (context.Context, trace.Span)
 	EmbedTraceIDInNamespacedName(key *client.ObjectKey, obj client.Object) error
@@ -136,25 +136,26 @@ func (tc *tracingClient) EmbedTraceIDInNamespacedName(key *client.ObjectKey, obj
 
 // Get adds tracing around the original client's Get method
 // IMPORTANT: Caller MUST call `defer span.End()` to end the trace from the calling function
-func (tc *tracingClient) StartTrace(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error) {
-	name := getNameFromNamespacedName(key)
-	initialKey := client.ObjectKey{Name: name, Namespace: key.Namespace}
+func (tc *tracingClient) StartTrace(ctx context.Context, key *client.ObjectKey, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error) {
+	name := getNameFromNamespacedName(*key)
+	incomingKey := *key
+	key.Name = name
 
 	// Create or retrieve the span from the context
-	getErr := tc.Reader.Get(ctx, initialKey, obj, opts...)
+	getErr := tc.Reader.Get(ctx, *key, obj, opts...)
 	if getErr != nil {
-		ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, "StartTrace Unknown Object")
+		ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("StartTrace Unknown Object %s", name))
 		return trace.ContextWithSpan(ctx, span), span, getErr
 	}
-	overrideTraceIDFromNamespacedName(key, obj)
+	overrideTraceIDFromNamespacedName(incomingKey, obj)
 
 	gvk, err := apiutil.GVKForObject(obj, tc.scheme)
 	objectKind := ""
 	if err == nil {
 		objectKind = gvk.GroupKind().Kind
 	}
-	callerName := getCallerNameFromNamespacedName(key)
-	callerKind := getCallerKindFromNamespacedName(key)
+	callerName := getCallerNameFromNamespacedName(incomingKey)
+	callerKind := getCallerKindFromNamespacedName(incomingKey)
 
 	operationName := ""
 
