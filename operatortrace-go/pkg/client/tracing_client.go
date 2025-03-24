@@ -141,7 +141,11 @@ func (tc *tracingClient) StartTrace(ctx context.Context, key client.ObjectKey, o
 	initialKey := client.ObjectKey{Name: name, Namespace: key.Namespace}
 
 	// Create or retrieve the span from the context
-	_ = tc.Reader.Get(ctx, initialKey, obj, opts...)
+	getErr := tc.Reader.Get(ctx, initialKey, obj, opts...)
+	if getErr != nil {
+		ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, "StartTrace Unknown Object")
+		return trace.ContextWithSpan(ctx, span), span, getErr
+	}
 	overrideTraceIDFromNamespacedName(key, obj)
 
 	gvk, err := apiutil.GVKForObject(obj, tc.scheme)
