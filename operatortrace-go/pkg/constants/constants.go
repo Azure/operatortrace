@@ -4,7 +4,7 @@
 package constants
 
 const (
-	TraceIDAnnotation  = "operatortrace.io/trace-id"
-	SpanIDAnnotation   = "operatortrace.io/span-id"
+	TraceIDAnnotation  = "operatortrace.azure.microsoft.com/trace-id"
+	SpanIDAnnotation   = "operatortrace.azure.microsoft.com/span-id"
 	ResourceVersionKey = "resourceVersion"
 )
