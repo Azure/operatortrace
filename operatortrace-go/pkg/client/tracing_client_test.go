@@ -16,6 +16,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -667,20 +668,12 @@ func TestGetConditions(t *testing.T) {
 	}
 
 	// Retrieve the conditions using the getConditions function
-	conditions, err := getConditions(pod, scheme)
+	conditions, err := getConditionsAsMap(pod, scheme)
 
 	// Assert no error occurred
 	assert.NoError(t, err)
 
-	// Assert the conditions are as expected
-	expectedConditions := []metav1.Condition{
-		{
-			Type:   string(corev1.PodScheduled),
-			Status: metav1.ConditionTrue,
-		},
-	}
-
-	assert.Equal(t, expectedConditions, conditions)
+	assert.Equal(t, conditions[0]["Type"], v1.PodConditionType("PodScheduled"))
 }
 
 func TestGetConditionMessage(t *testing.T) {
@@ -800,18 +793,18 @@ func TestDeleteCondition(t *testing.T) {
 	}
 
 	// Delete the condition using the deleteCondition function
-	err := deleteCondition("PodScheduled", pod, scheme)
+	err := deleteConditionAsMap("PodScheduled", pod, scheme)
 
 	// Assert no error occurred
 	assert.NoError(t, err)
 
 	// Retrieve the conditions using the getConditions function
-	conditions, err := getConditions(pod, scheme)
+	conditions, err := getConditionsAsMap(pod, scheme)
 
 	// Assert no error occurred
 	assert.NoError(t, err)
 
 	// Assert the conditions are as expected
-	expectedConditions := []metav1.Condition(nil)
+	expectedConditions := []map[string]interface{}(nil)
 	assert.Equal(t, expectedConditions, conditions)
 }

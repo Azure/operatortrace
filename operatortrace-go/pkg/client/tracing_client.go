@@ -218,8 +218,8 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 	}
 
 	// remove the traceid and spanid conditions from the object and create a status().patch
-	deleteCondition("TraceID", obj, tc.scheme)
-	deleteCondition("SpanID", obj, tc.scheme)
+	deleteConditionAsMap("TraceID", obj, tc.scheme)
+	deleteConditionAsMap("SpanID", obj, tc.scheme)
 	original = obj.DeepCopyObject().(client.Object)
 	patch = client.MergeFrom(original)
 
@@ -566,25 +566,100 @@ func addTraceIDAnnotation(ctx context.Context, obj client.Object) {
 	}
 }
 
-// getConditions retrieves the "conditions" field from the status of a Kubernetes object using type casting and returns it as []metav1.Condition.
-func getConditions(obj client.Object, scheme *runtime.Scheme) ([]metav1.Condition, error) {
+// getConditionMessage retrieves the message for a specific condition type from a Kubernetes object.
+func getConditionMessage(conditionType string, obj client.Object, scheme *runtime.Scheme) (string, error) {
+	conditions, err := getConditionsAsMap(obj, scheme)
+	if err != nil {
+		return "", err
+	}
+
+	for _, condition := range conditions {
+		// Check if "Type" key exists
+		conType, exists := condition["Type"]
+		if !exists {
+			return "", fmt.Errorf("condition does not contain a 'Type' field")
+		}
+
+		// Convert conType to string using reflection
+		conTypeStr, err := convertToString(conType)
+		if err != nil {
+			return "", fmt.Errorf("failed to convert 'Type' field to string: %v", err)
+		}
+
+		if conTypeStr == conditionType {
+			message := condition["Message"].(string)
+			return message, nil
+		}
+	}
+
+	return "", fmt.Errorf("condition of type %s not found", conditionType)
+}
+
+// setConditionMessage sets the message for a specific condition type in a Kubernetes object.
+func setConditionMessage(conditionType, message string, obj client.Object, scheme *runtime.Scheme) error {
+	deleteConditionAsMap(conditionType, obj, scheme)
+
+	conditions, err := getConditionsAsMap(obj, scheme)
+	if err != nil {
+		return err
+	}
+
+	newCondition := map[string]interface{}{
+		"Type":               conditionType,
+		"Status":             metav1.ConditionUnknown,
+		"LastTransitionTime": metav1.Now(),
+		"Message":            message,
+	}
+	conditions = append(conditions, newCondition)
+
+	return setConditionsFromMap(obj, conditions, scheme)
+}
+
+func deleteConditionAsMap(conditionType string, obj client.Object, scheme *runtime.Scheme) error {
+	// Retrieve the current conditions as a map
+	conditions, err := getConditionsAsMap(obj, scheme)
+	if err != nil {
+		return err
+	}
+
+	var outConditions []map[string]interface{}
+	for _, condition := range conditions {
+		// Check if "Type" key exists
+		conType, exists := condition["Type"]
+		if !exists {
+			return fmt.Errorf("condition does not contain a 'Type' field")
+		}
+
+		// Convert conType to string using reflection
+		conTypeStr, err := convertToString(conType)
+		if err != nil {
+			return fmt.Errorf("failed to convert 'Type' field to string: %v", err)
+		}
+
+		if conTypeStr != conditionType {
+			outConditions = append(outConditions, condition)
+		}
+	}
+
+	// Set the updated conditions back to the object
+	return setConditionsFromMap(obj, outConditions, scheme)
+}
+
+func getConditionsAsMap(obj client.Object, scheme *runtime.Scheme) ([]map[string]interface{}, error) {
 	gvk, err := apiutil.GVKForObject(obj, scheme)
 	if err != nil {
 		return nil, fmt.Errorf("problem getting the GVK: %w", err)
 	}
 
-	// Use the scheme to get the specific type of the object.
 	objTyped, err := scheme.New(gvk)
 	if err != nil {
 		return nil, fmt.Errorf("problem creating new object of kind %s: %w", gvk.Kind, err)
 	}
 
-	// Cast the object to its specific type.
 	if err := scheme.Convert(obj, objTyped, nil); err != nil {
 		return nil, fmt.Errorf("problem converting object to kind %s: %w", gvk.Kind, err)
 	}
 
-	// Use reflection to access the conditions field.
 	val := reflect.ValueOf(objTyped)
 	statusField := val.Elem().FieldByName("Status")
 	if !statusField.IsValid() {
@@ -597,126 +672,45 @@ func getConditions(obj client.Object, scheme *runtime.Scheme) ([]metav1.Conditio
 	}
 
 	conditionsValue := conditionsField.Interface()
-	conditions, err := convertToMetaV1Conditions(conditionsValue)
-	if err != nil {
-		return nil, fmt.Errorf("error converting conditions for kind %s: %w", gvk.Kind, err)
-	}
-
-	return conditions, nil
-}
-
-// getConditionMessage retrieves the message for a specific condition type from a Kubernetes object.
-func getConditionMessage(conditionType string, obj client.Object, scheme *runtime.Scheme) (string, error) {
-	conditions, err := getConditions(obj, scheme)
-	if err != nil {
-		return "", err
-	}
-
-	for _, condition := range conditions {
-		if condition.Type == conditionType {
-			return condition.Message, nil
-		}
-	}
-
-	return "", fmt.Errorf("condition of type %s not found", conditionType)
-}
-
-// convertToMetaV1Conditions converts conditions of any supported type to []metav1.Condition.
-func convertToMetaV1Conditions(conditionsValue interface{}) ([]metav1.Condition, error) {
-	val := reflect.ValueOf(conditionsValue)
+	val = reflect.ValueOf(conditionsValue)
 	if val.Kind() != reflect.Slice {
 		return nil, fmt.Errorf("conditions field is not a slice")
 	}
 
-	var metav1Conditions []metav1.Condition
+	var conditionsAsMap []map[string]interface{}
 	for i := 0; i < val.Len(); i++ {
 		conditionVal := val.Index(i)
 		if conditionVal.Kind() == reflect.Ptr {
 			conditionVal = conditionVal.Elem()
 		}
 
-		condition := metav1.Condition{}
+		conditionMap := make(map[string]interface{})
 		for _, field := range reflect.VisibleFields(conditionVal.Type()) {
 			fieldValue := conditionVal.FieldByIndex(field.Index)
-			switch field.Name {
-			case "Type":
-				condition.Type = fieldValue.String()
-			case "Status":
-				condition.Status = metav1.ConditionStatus(fieldValue.String())
-			case "Reason":
-				condition.Reason = fieldValue.String()
-			case "Message":
-				condition.Message = fieldValue.String()
-			case "LastTransitionTime":
-				condition.LastTransitionTime = fieldValue.Interface().(metav1.Time)
-			}
+			conditionMap[field.Name] = fieldValue.Interface()
 		}
-		metav1Conditions = append(metav1Conditions, condition)
+
+		conditionsAsMap = append(conditionsAsMap, conditionMap)
 	}
 
-	return metav1Conditions, nil
+	return conditionsAsMap, nil
 }
 
-// convertFromMetaV1 converts []metav1.Condition to the specific type of conditions used by the Kubernetes object.
-func convertFromMetaV1(conditions []metav1.Condition, targetType reflect.Type) (interface{}, error) {
-	if targetType.Kind() != reflect.Slice {
-		return nil, fmt.Errorf("target type is not a slice")
-	}
-
-	elemType := targetType.Elem()
-	if elemType.Kind() == reflect.Ptr {
-		elemType = elemType.Elem()
-	}
-
-	result := reflect.MakeSlice(targetType, len(conditions), len(conditions))
-	for i, cond := range conditions {
-		targetCond := reflect.New(elemType).Elem()
-
-		for _, field := range reflect.VisibleFields(elemType) {
-			fieldValue := targetCond.FieldByIndex(field.Index)
-			switch field.Name {
-			case "Type":
-				fieldValue.SetString(cond.Type)
-			case "Status":
-				fieldValue.SetString(string(cond.Status))
-			case "Reason":
-				fieldValue.SetString(cond.Reason)
-			case "Message":
-				fieldValue.SetString(cond.Message)
-			case "LastTransitionTime":
-				fieldValue.Set(reflect.ValueOf(cond.LastTransitionTime))
-			}
-		}
-
-		if targetType.Elem().Kind() == reflect.Ptr {
-			result.Index(i).Set(targetCond.Addr())
-		} else {
-			result.Index(i).Set(targetCond)
-		}
-	}
-
-	return result.Interface(), nil
-}
-
-// setConditions sets the "conditions" field in the status of a Kubernetes object using type casting.
-func setConditions(obj client.Object, conditions []metav1.Condition, scheme *runtime.Scheme) error {
+func setConditionsFromMap(obj client.Object, conditionsAsMap []map[string]interface{}, scheme *runtime.Scheme) error {
 	gvk, err := apiutil.GVKForObject(obj, scheme)
 	if err != nil {
 		return fmt.Errorf("problem getting the GVK: %w", err)
 	}
 
-	// Use the scheme to get the specific type of the object.
 	objTyped, err := scheme.New(gvk)
 	if err != nil {
 		return fmt.Errorf("problem creating new object of kind %s: %w", gvk.Kind, err)
 	}
 
-	// Cast the object to its specific type.
 	if err := scheme.Convert(obj, objTyped, nil); err != nil {
 		return fmt.Errorf("problem converting object to kind %s: %w", gvk.Kind, err)
 	}
 
-	// Use reflection to set the conditions field.
 	val := reflect.ValueOf(objTyped)
 	statusField := val.Elem().FieldByName("Status")
 	if !statusField.IsValid() {
@@ -728,14 +722,30 @@ func setConditions(obj client.Object, conditions []metav1.Condition, scheme *run
 		return fmt.Errorf("conditions field not found in kind %s", gvk.Kind)
 	}
 
-	convertedConditions, err := convertFromMetaV1(conditions, conditionsField.Type())
-	if err != nil {
-		return fmt.Errorf("error converting conditions for kind %s: %w", gvk.Kind, err)
+	elemType := conditionsField.Type().Elem()
+	result := reflect.MakeSlice(conditionsField.Type(), len(conditionsAsMap), len(conditionsAsMap))
+
+	for i, conditionMap := range conditionsAsMap {
+		targetCond := reflect.New(elemType).Elem()
+		for key, value := range conditionMap {
+			field := targetCond.FieldByName(key)
+			if field.IsValid() {
+				val := reflect.ValueOf(value)
+				if val.Type().ConvertibleTo(field.Type()) {
+					field.Set(val.Convert(field.Type()))
+				} else {
+					return fmt.Errorf("cannot convert value of field %s from %s to %s", key, val.Type(), field.Type())
+				}
+			}
+		}
+		if conditionsField.Type().Elem().Kind() == reflect.Ptr {
+			result.Index(i).Set(targetCond.Addr())
+		} else {
+			result.Index(i).Set(targetCond)
+		}
 	}
 
-	conditionsField.Set(reflect.ValueOf(convertedConditions))
-
-	// Convert the typed object back to the unstructured object.
+	conditionsField.Set(result)
 	if err := scheme.Convert(objTyped, obj, nil); err != nil {
 		return fmt.Errorf("problem converting object back to unstructured: %w", err)
 	}
@@ -743,42 +753,43 @@ func setConditions(obj client.Object, conditions []metav1.Condition, scheme *run
 	return nil
 }
 
-// setConditionMessage sets the message for a specific condition type in a Kubernetes object.
-func setConditionMessage(conditionType, message string, obj client.Object, scheme *runtime.Scheme) error {
-	// this prevents any accidental duplicates
-	deleteCondition(conditionType, obj, scheme)
-
-	conditions, err := getConditions(obj, scheme)
-	if err != nil {
-		return err
-	}
-
-	// Add the condition if it doesn't exist
-	newCondition := metav1.Condition{
-		Type:               conditionType,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: metav1.Now(),
-		Message:            message,
-	}
-	conditions = append(conditions, newCondition)
-
-	// Set the updated conditions back to the object
-	return setConditions(obj, conditions, scheme)
-}
-
-func deleteCondition(conditionType string, obj client.Object, scheme *runtime.Scheme) error {
-	conditions, err := getConditions(obj, scheme)
-	if err != nil {
-		return err
-	}
-
-	outConditions := []metav1.Condition{}
-	for _, condition := range conditions {
-		if condition.Type != conditionType {
-			outConditions = append(outConditions, condition)
+func mapToStruct(structVal reflect.Value, data map[string]interface{}) error {
+	for key, value := range data {
+		field := structVal.FieldByName(key)
+		if field.IsValid() {
+			switch field.Kind() {
+			case reflect.String:
+				field.SetString(value.(string))
+			case reflect.Bool:
+				field.SetBool(value.(bool))
+			case reflect.Int32:
+				field.SetInt(int64(value.(int32)))
+			case reflect.Int64:
+				field.SetInt(value.(int64))
+			case reflect.Float64:
+				field.SetFloat(value.(float64))
+			default:
+				field.Set(reflect.ValueOf(value))
+			}
 		}
 	}
+	return nil
+}
 
-	// Set the updated conditions back to the object
-	return setConditions(obj, outConditions, scheme)
+func convertToString(value interface{}) (string, error) {
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.String:
+		return v.String(), nil
+	case reflect.Interface:
+		// Handle the case where the value is an interface
+		return convertToString(v.Elem().Interface())
+	default:
+		// Check if the value has a String() method
+		stringer, ok := value.(fmt.Stringer)
+		if ok {
+			return stringer.String(), nil
+		}
+		return "", fmt.Errorf("unsupported type: %T", value)
+	}
 }
