@@ -217,14 +217,14 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 		span.RecordError(err)
 	}
 
+	original = obj.DeepCopyObject().(client.Object)
 	// remove the traceid and spanid conditions from the object and create a status().patch
 	deleteConditionAsMap("TraceID", obj, tc.scheme)
 	deleteConditionAsMap("SpanID", obj, tc.scheme)
-	original = obj.DeepCopyObject().(client.Object)
 	patch = client.MergeFrom(original)
 
 	tc.Logger.Info("Patching object status", "object", obj.GetName())
-	err = tc.Status().Patch(ctx, obj, patch)
+	err = tc.Client.Status().Patch(ctx, obj, patch)
 
 	if err != nil {
 		span.RecordError(err)

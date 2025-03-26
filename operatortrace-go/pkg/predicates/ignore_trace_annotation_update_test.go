@@ -158,6 +158,16 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 						Status:  corev1.ConditionTrue,
 						Message: "5678",
 					},
+					{
+						Type:    "SpanID",
+						Status:  corev1.ConditionTrue,
+						Message: "5678",
+					},
+					{
+						Type:    "SomethingElse",
+						Status:  corev1.ConditionTrue,
+						Message: "asdf",
+					},
 				},
 			},
 		}
@@ -174,6 +184,16 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 						Type:    "TraceID",
 						Status:  corev1.ConditionTrue,
 						Message: "1234",
+					},
+					{
+						Type:    "SpanID",
+						Status:  corev1.ConditionTrue,
+						Message: "1234",
+					},
+					{
+						Type:    "SomethingElse",
+						Status:  corev1.ConditionTrue,
+						Message: "asdf",
 					},
 				},
 			},

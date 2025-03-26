@@ -433,6 +433,14 @@ func TestEndTrace(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodScheduled,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
 	}
 
 	// Save the Pod
@@ -443,6 +451,8 @@ func TestEndTrace(t *testing.T) {
 	podPatch := client.MergeFrom(pod.DeepCopy())
 	pod.Labels = map[string]string{"updated": "true"}
 	err = tracingClient.Patch(ctx, pod, podPatch)
+	assert.NoError(t, err)
+	err = tracingClient.Status().Update(ctx, pod)
 	assert.NoError(t, err)
 
 	// Retrieve the Pod and check the annotation
@@ -463,6 +473,7 @@ func TestEndTrace(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, finalPod.Annotations[constants.TraceIDAnnotation])
 	assert.Empty(t, finalPod.Annotations[constants.SpanIDAnnotation])
+	assert.Equal(t, 1, len(finalPod.Status.Conditions))
 }
 
 func TestEndTraceChangedAnnotation(t *testing.T) {
