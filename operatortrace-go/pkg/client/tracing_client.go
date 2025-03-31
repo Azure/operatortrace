@@ -35,6 +35,34 @@ type tracingStatusClient struct {
 	Logger logr.Logger
 }
 
+// EmbedTraceID struct to handle embedding and extracting trace ID and span ID information.
+type EmbedTraceID struct {
+	TraceID    string
+	SpanID     string
+	ObjectKind string
+	ObjectName string
+	KeyName    string
+}
+
+// ToString method converts EmbedTraceID struct to a string representation.
+func (e *EmbedTraceID) ToString() string {
+	return fmt.Sprintf("%s;%s;%s;%s;%s", e.TraceID, e.SpanID, e.ObjectKind, e.ObjectName, e.KeyName)
+}
+
+// FromString method parses a string and fills the EmbedTraceID struct.
+func (e *EmbedTraceID) FromString(s string) error {
+	parts := strings.Split(s, ";")
+	if len(parts) != 5 {
+		return fmt.Errorf("invalid string format")
+	}
+	e.TraceID = parts[0]
+	e.SpanID = parts[1]
+	e.ObjectKind = parts[2]
+	e.ObjectName = parts[3]
+	e.KeyName = parts[4]
+	return nil
+}
+
 type TracingClient interface {
 	client.Client
 	trace.Tracer
@@ -125,11 +153,17 @@ func (tc *tracingClient) EmbedTraceIDInNamespacedName(key *client.ObjectKey, obj
 	if err != nil {
 		return fmt.Errorf("problem getting the scheme: %w", err)
 	}
-
 	objectKind := gvk.GroupKind().Kind
 	objectName := obj.GetName()
 
-	key.Name = fmt.Sprintf("%s;%s;%s;%s;%s", traceID, spanID, objectKind, objectName, key.Name)
+	embedTraceID := &EmbedTraceID{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		ObjectKind: objectKind,
+		ObjectName: objectName,
+		KeyName:    key.Name,
+	}
+	key.Name = embedTraceID.ToString()
 	tc.Logger.Info("EmbedTraceIDInNamespacedName", "objectName", key.Name)
 	return nil
 }
@@ -473,55 +507,48 @@ func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.
 	return ctx, span
 }
 
-// if the key.Name looks like this: f620f5cad0af940c294f980c5366a6a1;45f359cdc1c8ab06;Configmap;pod-configmap01;default-pod
-// this will return the corrected Kind (Configmap)
+// getCallerKindFromNamespacedName extracts the caller kind from the key.Name
 func getCallerKindFromNamespacedName(key client.ObjectKey) string {
-
-	keyNameParts := strings.Split(key.Name, ";")
-	if len(keyNameParts) != 5 {
+	embedTraceID := &EmbedTraceID{}
+	if err := embedTraceID.FromString(key.Name); err != nil {
 		return ""
 	}
-	return keyNameParts[2]
+	return embedTraceID.ObjectKind
 }
 
-// if the key.Name looks like this: f620f5cad0af940c294f980c5366a6a1;45f359cdc1c8ab06;Configmap;pod-configmap01;default-pod
-// this will return the corrected caller-name (pod-configmap01)
+// getCallerNameFromNamespacedName extracts the caller name from the key.Name
 func getCallerNameFromNamespacedName(key client.ObjectKey) string {
-	keyNameParts := strings.Split(key.Name, ";")
-	if len(keyNameParts) != 5 {
+	embedTraceID := &EmbedTraceID{}
+	if err := embedTraceID.FromString(key.Name); err != nil {
 		return ""
 	}
-	return keyNameParts[3]
+	return embedTraceID.ObjectName
 }
 
-// if the key.Name looks like this: f620f5cad0af940c294f980c5366a6a1;45f359cdc1c8ab06;Configmap;pod-configmap01;default-pod
-// this will return the corrected key.name (default-pod)
+// getNameFromNamespacedName extracts the original name from the key.Name
 func getNameFromNamespacedName(key client.ObjectKey) string {
-	keyNameParts := strings.Split(key.Name, ";")
-	if len(keyNameParts) != 5 {
+	embedTraceID := &EmbedTraceID{}
+	if err := embedTraceID.FromString(key.Name); err != nil {
 		return key.Name
 	}
-	return keyNameParts[4]
+	return embedTraceID.KeyName
 }
 
 // if the key.Name looks like this: f620f5cad0af940c294f980c5366a6a1;45f359cdc1c8ab06;Configmap;pod-configmap01;default-pod
 // then we can extract the traceID and spanID from the key.Name
 // and override the traceID and spanID in the object annotations
 func overrideTraceIDFromNamespacedName(key client.ObjectKey, obj client.Object) error {
-	keyNameParts := strings.Split(key.Name, ";")
-	if len(keyNameParts) != 5 {
+	embedTraceID := &EmbedTraceID{}
+	if err := embedTraceID.FromString(key.Name); err != nil {
 		return nil
 	}
-
-	traceID := keyNameParts[0]
-	spanID := keyNameParts[1]
 
 	if obj.GetAnnotations() == nil {
 		obj.SetAnnotations(map[string]string{})
 	}
 	annotations := obj.GetAnnotations()
-	annotations[constants.TraceIDAnnotation] = traceID
-	annotations[constants.SpanIDAnnotation] = spanID
+	annotations[constants.TraceIDAnnotation] = embedTraceID.TraceID
+	annotations[constants.SpanIDAnnotation] = embedTraceID.SpanID
 	obj.SetAnnotations(annotations)
 	return nil
 }
