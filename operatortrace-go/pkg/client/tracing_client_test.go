@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+// pkg/client/tracing_client_test.go
 
 package client
 
@@ -299,12 +300,52 @@ func TestUpdateWithTracing(t *testing.T) {
 	assert.NotEqual(t, spanID, retrievedPod.Annotations[constants.SpanIDAnnotation])
 	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
 
-	// Test status udpate with tracing
+	// Test status update with tracing
 	t.Run("update status with tracing", func(t *testing.T) {
 		pod.Status.Phase = corev1.PodRunning
 		err = tracingClient.Status().Update(ctx, retrievedPod)
 		assert.NoError(t, err)
 		assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
+	})
+
+	// Update without any meaningful changes
+	t.Run("update without changes (should skip update)", func(t *testing.T) {
+		// Fetch the current resource again to get the latest state
+		currentPod := &corev1.Pod{}
+		err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, currentPod)
+		assert.NoError(t, err)
+
+		// Attempt update without any changes
+		err = tracingClient.Update(ctx, currentPod)
+		assert.NoError(t, err)
+
+		// Fetch pod again to check if the resourceVersion has changed
+		afterUpdatePod := &corev1.Pod{}
+		err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, afterUpdatePod)
+		assert.NoError(t, err)
+
+		// resourceVersion should not have changed
+		assert.Equal(t, currentPod.ResourceVersion, afterUpdatePod.ResourceVersion, "ResourceVersion should not change if update was skipped")
+	})
+
+	// Second status update with no real changes, should skip
+	t.Run("second status update without changes (should skip)", func(t *testing.T) {
+		// Fetch the current resource again
+		latestPod := &corev1.Pod{}
+		err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, latestPod)
+		assert.NoError(t, err)
+
+		// Attempt status update without any changes
+		patch := client.MergeFrom(latestPod.DeepCopy())
+		err = tracingClient.Status().Patch(ctx, latestPod, patch)
+		assert.NoError(t, err)
+
+		// Fetch the Pod again to verify that resourceVersion hasn't incremented
+		afterStatusPatchPod := &corev1.Pod{}
+		err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, afterStatusPatchPod)
+		assert.NoError(t, err)
+
+		assert.Equal(t, latestPod.ResourceVersion, afterStatusPatchPod.ResourceVersion, "ResourceVersion should not change if status patch was skipped")
 	})
 }
 

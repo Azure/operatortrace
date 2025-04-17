@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+// pkg/client/tracing_status_client.go
 
 package client
 
@@ -7,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -16,6 +18,7 @@ import (
 
 type tracingStatusClient struct {
 	scheme *runtime.Scheme
+	Client client.Client
 	client.StatusWriter
 	trace.Tracer
 	Logger logr.Logger
@@ -26,9 +29,10 @@ var _ client.StatusWriter = (*tracingStatusClient)(nil)
 func (tc *tracingClient) Status() client.StatusWriter {
 	return &tracingStatusClient{
 		scheme:       tc.scheme,
-		Logger:       tc.Logger,
+		Client:       tc.Client,
 		StatusWriter: tc.Client.Status(),
 		Tracer:       tc.Tracer,
+		Logger:       tc.Logger,
 	}
 }
 
@@ -36,6 +40,16 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 	gvk, err := apiutil.GVKForObject(obj, ts.scheme)
 	if err != nil {
 		return fmt.Errorf("problem getting the scheme: %w", err)
+	}
+
+	existingObj := obj.DeepCopyObject().(client.Object)
+	if err := ts.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
+		return err
+	}
+
+	if !predicates.HasSignificantUpdate(existingObj, obj) {
+		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
+		return nil
 	}
 
 	kind := gvk.GroupKind().Kind
@@ -58,6 +72,16 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 	gvk, err := apiutil.GVKForObject(obj, ts.scheme)
 	if err != nil {
 		return fmt.Errorf("problem getting the scheme: %w", err)
+	}
+
+	existingObj := obj.DeepCopyObject().(client.Object)
+	if err := ts.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
+		return err
+	}
+
+	if !predicates.HasSignificantUpdate(existingObj, obj) {
+		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
+		return nil
 	}
 
 	kind := gvk.GroupKind().Kind
