@@ -42,6 +42,11 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 		return fmt.Errorf("problem getting the scheme: %w", err)
 	}
 
+	kind := gvk.GroupKind().Kind
+
+	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusUpdate %s %s", kind, obj.GetName()))
+	defer span.End()
+
 	existingObj := obj.DeepCopyObject().(client.Object)
 	if err := ts.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
 		return err
@@ -51,11 +56,6 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
-
-	kind := gvk.GroupKind().Kind
-
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusUpdate %s %s", kind, obj.GetName()))
-	defer span.End()
 
 	setConditionMessage("TraceID", span.SpanContext().TraceID().String(), obj, ts.scheme)
 	setConditionMessage("SpanID", span.SpanContext().SpanID().String(), obj, ts.scheme)
@@ -74,6 +74,11 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 		return fmt.Errorf("problem getting the scheme: %w", err)
 	}
 
+	kind := gvk.GroupKind().Kind
+
+	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusPatch %s %s", kind, obj.GetName()))
+	defer span.End()
+
 	existingObj := obj.DeepCopyObject().(client.Object)
 	if err := ts.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
 		return err
@@ -83,11 +88,6 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
-
-	kind := gvk.GroupKind().Kind
-
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusPatch %s %s", kind, obj.GetName()))
-	defer span.End()
 
 	setConditionMessage("TraceID", span.SpanContext().TraceID().String(), obj, ts.scheme)
 	setConditionMessage("SpanID", span.SpanContext().SpanID().String(), obj, ts.scheme)

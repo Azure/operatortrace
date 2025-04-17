@@ -74,6 +74,11 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 		return fmt.Errorf("problem getting the scheme: %w", err)
 	}
 
+	kind := gvk.GroupKind().Kind
+
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Update %s %s", kind, obj.GetName()))
+	defer span.End()
+
 	existingObj := obj.DeepCopyObject().(client.Object)
 	if err := tc.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
 		return err
@@ -83,11 +88,6 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 		tc.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
-
-	kind := gvk.GroupKind().Kind
-
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Update %s %s", kind, obj.GetName()))
-	defer span.End()
 
 	addTraceIDAnnotation(ctx, obj)
 	tc.Logger.Info("Updating object", "object", obj.GetName())
@@ -275,6 +275,11 @@ func (tc *tracingClient) Patch(ctx context.Context, obj client.Object, patch cli
 		return fmt.Errorf("problem getting the scheme: %w", err)
 	}
 
+	kind := gvk.GroupKind().Kind
+
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Patch %s %s", kind, obj.GetName()))
+	defer span.End()
+
 	existingObj := obj.DeepCopyObject().(client.Object)
 	if err := tc.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
 		return err
@@ -284,11 +289,6 @@ func (tc *tracingClient) Patch(ctx context.Context, obj client.Object, patch cli
 		tc.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
-
-	kind := gvk.GroupKind().Kind
-
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Patch %s %s", kind, obj.GetName()))
-	defer span.End()
 
 	addTraceIDAnnotation(ctx, obj)
 	tc.Logger.Info("Patching object", "object", obj.GetName())
