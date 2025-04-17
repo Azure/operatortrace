@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+// pkg/predicates/ignore_trace_annotation_update.go
 
 package predicates
 
