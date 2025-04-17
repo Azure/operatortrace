@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
@@ -43,6 +44,17 @@ func (IgnoreTraceAnnotationUpdatePredicate) Update(e event.UpdateEvent) bool {
 
 	// Otherwise, indicate the update should be processed
 	return true
+}
+
+// HasSignificantUpdate returns true if there's a significant difference between two objects,
+// ignoring trace/span annotations and resourceVersion changes.
+func HasSignificantUpdate(oldObj, newObj runtime.Object) bool {
+	updateEvent := event.UpdateEvent{
+		ObjectOld: oldObj.(client.Object),
+		ObjectNew: newObj.(client.Object),
+	}
+	predicate := IgnoreTraceAnnotationUpdatePredicate{}
+	return predicate.Update(updateEvent)
 }
 
 // hasSpecOrStatusChanged checks if the spec or status fields have changed.

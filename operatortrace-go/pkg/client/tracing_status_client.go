@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,7 +47,7 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 		return err
 	}
 
-	if objectSemanticEqual(existingObj, obj) {
+	if !predicates.HasSignificantUpdate(existingObj, obj) {
 		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
@@ -78,7 +79,7 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 		return err
 	}
 
-	if objectSemanticEqual(existingObj, obj) {
+	if !predicates.HasSignificantUpdate(existingObj, obj) {
 		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}

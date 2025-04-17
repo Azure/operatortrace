@@ -55,11 +55,3 @@ func convertToString(value interface{}) (string, error) {
 		return "", fmt.Errorf("unsupported type: %T", value)
 	}
 }
-
-// objectSemanticEqual compares two objects, ignoring traceid/spanid annotations
-func objectSemanticEqual(obj1, obj2 client.Object) bool {
-	copyObj1 := obj1.DeepCopyObject().(client.Object)
-	copyObj2 := obj2.DeepCopyObject().(client.Object)
-
-	return reflect.DeepEqual(copyObj1, copyObj2)
-}
