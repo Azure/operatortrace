@@ -14,6 +14,35 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
+// getConditionTime retrieves the time for a specific condition type from a Kubernetes object.
+func getConditionTime(conditionType string, obj client.Object, scheme *runtime.Scheme) (metav1.Time, error) {
+	conditions, err := getConditionsAsMap(obj, scheme)
+	if err != nil {
+		return metav1.Time{}, err
+	}
+
+	for _, condition := range conditions {
+		// Check if "Type" key exists
+		conType, exists := condition["Type"]
+		if !exists {
+			return metav1.Time{}, fmt.Errorf("condition does not contain a 'Type' field")
+		}
+
+		// Convert conType to string using reflection
+		conTypeStr, err := convertToString(conType)
+		if err != nil {
+			return metav1.Time{}, fmt.Errorf("failed to convert 'Type' field to string: %v", err)
+		}
+
+		if conTypeStr == conditionType {
+			time := condition["LastTransitionTime"].(metav1.Time)
+			return time, nil
+		}
+	}
+
+	return metav1.Time{}, fmt.Errorf("condition of type %s not found", conditionType)
+}
+
 // getConditionMessage retrieves the message for a specific condition type from a Kubernetes object.
 func getConditionMessage(conditionType string, obj client.Object, scheme *runtime.Scheme) (string, error) {
 	conditions, err := getConditionsAsMap(obj, scheme)

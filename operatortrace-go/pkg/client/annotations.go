@@ -6,6 +6,7 @@ package client
 
 import (
 	"context"
+	"time"
 
 	constants "github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
 	"go.opentelemetry.io/otel/trace"
@@ -22,6 +23,8 @@ func addTraceIDAnnotation(ctx context.Context, obj client.Object) {
 		}
 		annotations := obj.GetAnnotations()
 		annotations[constants.TraceIDAnnotation] = traceID
+		// This gets reset when the object is updated so if the object is constantly being updated, there could be a long running traceID
+		annotations[constants.TraceIDTimeAnnotation] = time.Now().Format(time.RFC3339)
 		obj.SetAnnotations(annotations)
 	}
 	spanID := span.SpanContext().SpanID().String()
@@ -50,6 +53,7 @@ func overrideTraceIDFromNamespacedName(key client.ObjectKey, obj client.Object) 
 	annotations := obj.GetAnnotations()
 	annotations[constants.TraceIDAnnotation] = embedTraceID.TraceID
 	annotations[constants.SpanIDAnnotation] = embedTraceID.SpanID
+	annotations[constants.TraceIDTimeAnnotation] = time.Now().Format(time.RFC3339)
 	obj.SetAnnotations(annotations)
 	return nil
 }
