@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+// pkg/predicates/ignore_trace_annotation_update_test.go
 
 package predicates_test
 
@@ -206,5 +207,148 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 
 		result := pred.Update(updateEvent)
 		assert.False(t, result, "Expected update to be ignored when only the resource generation or traceid changes")
+	})
+
+	t.Run("NodeIdentity trace and span ID annotations changed", func(t *testing.T) {
+		oldNodeIdentity := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					constants.TraceIDAnnotation: "4d209ecc96386aaaaa38e9d2a1f7cf1a",
+					constants.SpanIDAnnotation:  "bfe57da3ab276317",
+				},
+				ResourceVersion: "778549",
+			},
+		}
+
+		newNodeIdentity := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					constants.TraceIDAnnotation: "4d209ecc96386aaaaa38e9d2a1f7cf1a",
+					constants.SpanIDAnnotation:  "133fcd43b378545b",
+				},
+				ResourceVersion: "783399",
+			},
+		}
+
+		updateEvent := event.UpdateEvent{
+			ObjectOld: oldNodeIdentity,
+			ObjectNew: newNodeIdentity,
+		}
+
+		result := pred.Update(updateEvent)
+		assert.False(t, result, "Expected update to be ignored when only the trace ID and span ID annotations change in NodeIdentity")
+	})
+
+	t.Run("NodeIdentity status conditions changed", func(t *testing.T) {
+		oldNodeIdentity := &corev1.Pod{
+			Status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{
+					{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.Now(),
+					},
+					{
+						Type:               corev1.PodReady,
+						Status:             corev1.ConditionFalse,
+						LastTransitionTime: metav1.Now(),
+					},
+				},
+			},
+		}
+
+		newNodeIdentity := &corev1.Pod{
+			Status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{
+					{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.Now(),
+					},
+					{
+						Type:               corev1.PodReady,
+						Status:             corev1.ConditionTrue, // Status changed
+						LastTransitionTime: metav1.Now(),
+					},
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{
+			ObjectOld: oldNodeIdentity,
+			ObjectNew: newNodeIdentity,
+		}
+
+		result := pred.Update(updateEvent)
+		assert.True(t, result, "Expected update to be processed when NodeIdentity status conditions change")
+	})
+
+	t.Run("NodeIdentity status conditions only time changed on traceid", func(t *testing.T) {
+		currentTime := metav1.Now()
+		oldNodeIdentity := &corev1.Pod{
+			Status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{
+					{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: currentTime,
+					},
+					{
+						Type:               corev1.PodReady,
+						Status:             corev1.ConditionFalse,
+						LastTransitionTime: currentTime,
+					},
+					{
+						Type:               "TraceID",
+						Status:             corev1.ConditionTrue,
+						Message:            "5678",
+						LastTransitionTime: currentTime,
+					},
+					{
+						Type:               "SpanID",
+						Status:             corev1.ConditionTrue,
+						Message:            "5678",
+						LastTransitionTime: currentTime,
+					},
+				},
+			},
+		}
+
+		newNodeIdentity := &corev1.Pod{
+			Status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{
+					{
+						Type:               corev1.PodScheduled,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: currentTime,
+					},
+					{
+						Type:               corev1.PodReady,
+						Status:             corev1.ConditionFalse,
+						LastTransitionTime: currentTime,
+					},
+					{
+						Type:               "TraceID",
+						Status:             corev1.ConditionTrue,
+						Message:            "5679",
+						LastTransitionTime: currentTime,
+					},
+					{
+						Type:               "SpanID",
+						Status:             corev1.ConditionTrue,
+						Message:            "56799",
+						LastTransitionTime: currentTime,
+					},
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{
+			ObjectOld: oldNodeIdentity,
+			ObjectNew: newNodeIdentity,
+		}
+
+		result := pred.Update(updateEvent)
+		assert.False(t, result, "Only the time changed on the traceid, this should be ignored")
 	})
 }

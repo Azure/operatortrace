@@ -29,22 +29,18 @@ func (IgnoreTraceAnnotationUpdatePredicate) Update(e event.UpdateEvent) bool {
 	oldAnnotations := e.ObjectOld.GetAnnotations()
 	newAnnotations := e.ObjectNew.GetAnnotations()
 
-	traceIDChanged := oldAnnotations[constants.TraceIDAnnotation] != newAnnotations[constants.TraceIDAnnotation]
-	spanIDChanged := oldAnnotations[constants.SpanIDAnnotation] != newAnnotations[constants.SpanIDAnnotation]
-	resourceGenerationChanged := e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
-	resourceVersionChanged := e.ObjectOld.GetResourceVersion() != e.ObjectNew.GetResourceVersion()
 	otherAnnotationsChanged := !equalExcept(oldAnnotations, newAnnotations, constants.TraceIDAnnotation, constants.SpanIDAnnotation)
 
 	// Check if the spec or status fields have changed
 	specOrStatusChanged := hasSpecOrStatusChanged(e.ObjectOld, e.ObjectNew)
 
-	// If only trace ID, span ID, or resource version changed, and no other annotations, spec or status changed, ignore the update
-	if (traceIDChanged || spanIDChanged || resourceVersionChanged || resourceGenerationChanged) && !otherAnnotationsChanged && !specOrStatusChanged {
-		return false
+	// if other annotations changed or spec/status changed, we want to process the update
+	if otherAnnotationsChanged || specOrStatusChanged {
+		return true
 	}
 
-	// Otherwise, indicate the update should be processed
-	return true
+	// Otherwise, indicate the update should not be processed
+	return false
 }
 
 // HasSignificantUpdate returns true if there's a significant difference between two objects,

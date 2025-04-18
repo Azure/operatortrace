@@ -24,8 +24,17 @@ type tracingClient struct {
 	client.Client
 	client.Reader
 	trace.Tracer
-	Logger logr.Logger
+	Logger  logr.Logger
+	options Options
 }
+
+// Options holds the configuration for TracingClient
+type Options struct {
+	LinkedTraceIDLocation string
+}
+
+// Option is a function that configures Options
+type Option func(*Options)
 
 var _ TracingClient = (*tracingClient)(nil)
 
