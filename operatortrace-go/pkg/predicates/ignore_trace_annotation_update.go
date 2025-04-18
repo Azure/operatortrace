@@ -29,13 +29,18 @@ func (IgnoreTraceAnnotationUpdatePredicate) Update(e event.UpdateEvent) bool {
 	oldAnnotations := e.ObjectOld.GetAnnotations()
 	newAnnotations := e.ObjectNew.GetAnnotations()
 
+	// check if metadata except annotations have changed
+	labelsChanged := !equality.Semantic.DeepEqual(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels())
+	finalizersChanged := !equality.Semantic.DeepEqual(e.ObjectOld.GetFinalizers(), e.ObjectNew.GetFinalizers())
+	ownerReferenceChanged := !equality.Semantic.DeepEqual(e.ObjectOld.GetOwnerReferences(), e.ObjectNew.GetOwnerReferences())
+
 	otherAnnotationsChanged := !equalExcept(oldAnnotations, newAnnotations, constants.TraceIDAnnotation, constants.SpanIDAnnotation)
 
 	// Check if the spec or status fields have changed
 	specOrStatusChanged := hasSpecOrStatusChanged(e.ObjectOld, e.ObjectNew)
 
 	// if other annotations changed or spec/status changed, we want to process the update
-	if otherAnnotationsChanged || specOrStatusChanged {
+	if labelsChanged || finalizersChanged || ownerReferenceChanged || otherAnnotationsChanged || specOrStatusChanged {
 		return true
 	}
 
