@@ -23,10 +23,12 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		oldPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation: "old-trace-id",
-					constants.SpanIDAnnotation:  "old-span-id",
-					"key1":                      "value1",
+					constants.TraceIDAnnotation:     "old-trace-id",
+					constants.SpanIDAnnotation:      "old-span-id",
+					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
+					"key1":                          "value1",
 				},
+				Generation:      1,
 				ResourceVersion: "old-resource-version",
 			},
 			Spec: corev1.PodSpec{
@@ -37,10 +39,12 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		newPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation: "new-trace-id",
-					constants.SpanIDAnnotation:  "new-span-id",
-					"key1":                      "value1",
+					constants.TraceIDAnnotation:     "new-trace-id",
+					constants.SpanIDAnnotation:      "new-span-id",
+					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:28Z",
+					"key1":                          "value1",
 				},
+				Generation:      2,
 				ResourceVersion: "new-resource-version",
 			},
 			Spec: corev1.PodSpec{
@@ -61,9 +65,10 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		oldPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation: "old-trace-id",
-					constants.SpanIDAnnotation:  "old-span-id",
-					"key1":                      "value1",
+					constants.TraceIDAnnotation:     "old-trace-id",
+					constants.SpanIDAnnotation:      "old-span-id",
+					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
+					"key1":                          "value1",
 				},
 				Generation:      1,
 				ResourceVersion: "old-resource-version",
@@ -73,9 +78,10 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		newPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation: "old-trace-id",
-					constants.SpanIDAnnotation:  "old-span-id",
-					"key1":                      "new-value",
+					constants.TraceIDAnnotation:     "old-trace-id",
+					constants.SpanIDAnnotation:      "old-span-id",
+					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
+					"key1":                          "new-value",
 				},
 				Generation:      2,
 				ResourceVersion: "new-resource-version",
@@ -213,8 +219,9 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		oldNodeIdentity := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation: "4d209ecc96386aaaaa38e9d2a1f7cf1a",
-					constants.SpanIDAnnotation:  "bfe57da3ab276317",
+					constants.TraceIDAnnotation:     "4d209ecc96386aaaaa38e9d2a1f7cf1a",
+					constants.SpanIDAnnotation:      "bfe57da3ab276317",
+					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
 				},
 				ResourceVersion: "778549",
 			},
@@ -223,8 +230,9 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		newNodeIdentity := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation: "4d209ecc96386aaaaa38e9d2a1f7cf1a",
-					constants.SpanIDAnnotation:  "133fcd43b378545b",
+					constants.TraceIDAnnotation:     "4d209ecc96386aaaaa38e9d2a1f7cf1a",
+					constants.SpanIDAnnotation:      "133fcd43b378545b",
+					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:27Z",
 				},
 				ResourceVersion: "783399",
 			},
