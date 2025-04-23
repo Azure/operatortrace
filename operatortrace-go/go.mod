@@ -6,8 +6,8 @@ module github.com/Azure/operatortrace/operatortrace-go
 go 1.23.6
 
 replace (
-	k8s.io/apimachinery => k8s.io/apimachinery v0.31.3
-	k8s.io/client-go => k8s.io/client-go v0.31.3
+	k8s.io/apimachinery => k8s.io/apimachinery v0.31.7
+	k8s.io/client-go => k8s.io/client-go v0.31.7
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.6
 )
 
@@ -16,9 +16,9 @@ require (
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.34.0
-	k8s.io/api v0.31.3
-	k8s.io/apimachinery v0.31.3
-	k8s.io/client-go v0.32.1
+	k8s.io/api v0.31.7
+	k8s.io/apimachinery v0.31.7
+	k8s.io/client-go v0.31.7
 )
 
 require (
