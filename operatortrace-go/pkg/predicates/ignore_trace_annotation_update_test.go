@@ -359,4 +359,62 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		result := pred.Update(updateEvent)
 		assert.False(t, result, "Only the time changed on the traceid, this should be ignored")
 	})
+
+	t.Run("ConfigMap data changed", func(t *testing.T) {
+		oldConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-configmap",
+				Namespace: "default",
+			},
+			Data: map[string]string{
+				"key1": "value1",
+			},
+		}
+
+		newConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-configmap",
+				Namespace: "default",
+			},
+			Data: map[string]string{
+				"key1": "value2", // Data changed
+			},
+		}
+
+		updateEvent := event.UpdateEvent{
+			ObjectOld: oldConfigMap,
+			ObjectNew: newConfigMap,
+		}
+		result := pred.Update(updateEvent)
+		assert.True(t, result, "Expected update to be processed when ConfigMap data changes")
+	})
+
+	t.Run("Secret data not changed", func(t *testing.T) {
+		oldSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-secret",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"key1": []byte("value1"),
+			},
+		}
+
+		newSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-secret",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"key1": []byte("value1"), // Data not changed
+			},
+		}
+
+		updateEvent := event.UpdateEvent{
+			ObjectOld: oldSecret,
+			ObjectNew: newSecret,
+		}
+		result := pred.Update(updateEvent)
+		assert.False(t, result, "Expected update to not be processed when Secret data does not changes")
+	})
 }
