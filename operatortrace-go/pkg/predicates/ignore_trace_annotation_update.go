@@ -37,7 +37,7 @@ func (IgnoreTraceAnnotationUpdatePredicate) Update(e event.UpdateEvent) bool {
 	otherAnnotationsChanged := !equalExcept(oldAnnotations, newAnnotations, constants.TraceIDAnnotation, constants.SpanIDAnnotation, constants.TraceIDTimeAnnotation)
 
 	// Check if the spec or status fields have changed
-	specOrStatusChanged := hasSpecOrStatusChanged(e.ObjectOld, e.ObjectNew)
+	specOrStatusChanged := hasSpecOrStatusOrDataChanged(e.ObjectOld, e.ObjectNew)
 
 	// if other annotations changed or spec/status changed, we want to process the update
 	if labelsChanged || finalizersChanged || ownerReferenceChanged || otherAnnotationsChanged || specOrStatusChanged {
@@ -59,8 +59,8 @@ func HasSignificantUpdate(oldObj, newObj runtime.Object) bool {
 	return predicate.Update(updateEvent)
 }
 
-// hasSpecOrStatusChanged checks if the spec or status fields have changed.
-func hasSpecOrStatusChanged(oldObj, newObj runtime.Object) bool {
+// hasSpecOrStatusOrDataChanged checks if the spec, status, or data fields have changed.
+func hasSpecOrStatusOrDataChanged(oldObj, newObj runtime.Object) bool {
 	oldUnstructured := objToUnstructured(oldObj)
 	newUnstructured := objToUnstructured(newObj)
 
@@ -71,7 +71,11 @@ func hasSpecOrStatusChanged(oldObj, newObj runtime.Object) bool {
 	oldStatus := getFieldExcludingObservedGeneration(oldUnstructured, "status")
 	newStatus := getFieldExcludingObservedGeneration(newUnstructured, "status")
 
-	return hasFieldChanged(oldUnstructured, newUnstructured, "spec") || !equality.Semantic.DeepEqual(oldStatus, newStatus)
+	specChanged := hasFieldChanged(oldUnstructured, newUnstructured, "spec")
+	statusChanged := !equality.Semantic.DeepEqual(oldStatus, newStatus)
+	dataChanged := hasFieldChanged(oldUnstructured, newUnstructured, "data")
+
+	return specChanged || statusChanged || dataChanged
 }
 
 // getFieldExcludingObservedGeneration retrieves the field and excludes the observedGeneration.
