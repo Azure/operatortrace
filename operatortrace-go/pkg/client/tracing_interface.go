@@ -7,6 +7,7 @@ package client
 import (
 	"context"
 
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -16,8 +17,8 @@ type TracingClient interface {
 	client.Client
 	trace.Tracer
 
-	StartTrace(ctx context.Context, key *client.ObjectKey, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error)
+	StartTrace(ctx context.Context, requestWithTraceID *tracingtypes.RequestWithTraceID, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error)
 	EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) (client.Object, error)
 	StartSpan(ctx context.Context, operationName string) (context.Context, trace.Span)
-	EmbedTraceIDInNamespacedName(key *client.ObjectKey, obj client.Object) error
+	EmbedTraceIDInRequest(requestWithTraceID *tracingtypes.RequestWithTraceID, obj client.Object) error
 }

@@ -10,6 +10,7 @@ import (
 
 	constants "github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -114,7 +115,7 @@ func (tc *tracingClient) StartSpan(ctx context.Context, operationName string) (c
 }
 
 // EmbedTraceIDInNamespacedName embeds the traceID and spanID in the key.Name
-func (tc *tracingClient) EmbedTraceIDInNamespacedName(key *client.ObjectKey, obj client.Object) error {
+func (tc *tracingClient) EmbedTraceIDInRequest(requestWithTraceID *tracingtypes.RequestWithTraceID, obj client.Object) error {
 	traceID := obj.GetAnnotations()[constants.TraceIDAnnotation]
 	spanID := obj.GetAnnotations()[constants.SpanIDAnnotation]
 	if traceID == "" || spanID == "" {
@@ -128,40 +129,35 @@ func (tc *tracingClient) EmbedTraceIDInNamespacedName(key *client.ObjectKey, obj
 	objectKind := gvk.GroupKind().Kind
 	objectName := obj.GetName()
 
-	embedTraceID := &EmbedTraceID{
-		TraceID:    traceID,
-		SpanID:     spanID,
-		ObjectKind: objectKind,
-		ObjectName: objectName,
-		KeyName:    key.Name,
-	}
-	key.Name = embedTraceID.ToString()
-	tc.Logger.Info("EmbedTraceIDInNamespacedName", "objectName", key.Name)
+	requestWithTraceID.TraceID = traceID
+	requestWithTraceID.SpanID = spanID
+	requestWithTraceID.SenderKind = objectKind
+	requestWithTraceID.SenderName = objectName
+
+	tc.Logger.Info("EmbedTraceIDInNamespacedName", "objectName", requestWithTraceID.Name)
+
 	return nil
 }
 
 // Get adds tracing around the original client's Get method
 // IMPORTANT: Caller MUST call `defer span.End()` to end the trace from the calling function
-func (tc *tracingClient) StartTrace(ctx context.Context, key *client.ObjectKey, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error) {
-	name := getNameFromNamespacedName(*key)
-	incomingKey := *key
-	key.Name = name
-
+func (tc *tracingClient) StartTrace(ctx context.Context, requestWithTraceID *tracingtypes.RequestWithTraceID, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error) {
 	// Create or retrieve the span from the context
-	getErr := tc.Reader.Get(ctx, *key, obj, opts...)
+	getErr := tc.Reader.Get(ctx, requestWithTraceID.NamespacedName, obj, opts...)
 	if getErr != nil {
-		ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("StartTrace Unknown Object %s", name))
+		ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("StartTrace Unknown Object %s", requestWithTraceID.NamespacedName))
 		return trace.ContextWithSpan(ctx, span), span, getErr
 	}
-	overrideTraceIDFromNamespacedName(incomingKey, obj)
+	overrideTraceIDFromNamespacedName(*requestWithTraceID, obj)
 
 	gvk, err := apiutil.GVKForObject(obj, tc.scheme)
 	objectKind := ""
 	if err == nil {
 		objectKind = gvk.GroupKind().Kind
 	}
-	callerName := getCallerNameFromNamespacedName(incomingKey)
-	callerKind := getCallerKindFromNamespacedName(incomingKey)
+	name := requestWithTraceID.Name
+	callerName := requestWithTraceID.SenderName
+	callerKind := requestWithTraceID.SenderKind
 
 	operationName := ""
 
@@ -177,7 +173,7 @@ func (tc *tracingClient) StartTrace(ctx context.Context, key *client.ObjectKey, 
 		span.RecordError(err)
 	}
 
-	tc.Logger.Info("Getting object", "object", key.Name)
+	tc.Logger.Info("Getting object", "object", name)
 	return trace.ContextWithSpan(ctx, span), span, err
 }
 

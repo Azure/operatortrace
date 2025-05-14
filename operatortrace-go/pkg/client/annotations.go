@@ -9,6 +9,8 @@ import (
 	"time"
 
 	constants "github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
+	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -38,12 +40,9 @@ func addTraceIDAnnotation(ctx context.Context, obj client.Object) {
 	}
 }
 
-// if the key.Name looks like this: f620f5cad0af940c294f980c5366a6a1;45f359cdc1c8ab06;Configmap;pod-configmap01;default-pod
-// then we can extract the traceID and spanID from the key.Name
-// and override the traceID and spanID in the object annotations
-func overrideTraceIDFromNamespacedName(key client.ObjectKey, obj client.Object) error {
-	embedTraceID := &EmbedTraceID{}
-	if err := embedTraceID.FromString(key.Name); err != nil {
+// TODO: Fix comment
+func overrideTraceIDFromNamespacedName(requestWithTraceID tracingtypes.RequestWithTraceID, obj client.Object) error {
+	if lo.IsNil(requestWithTraceID.TraceID) || lo.IsNil(requestWithTraceID.SpanID) {
 		return nil
 	}
 
@@ -51,8 +50,8 @@ func overrideTraceIDFromNamespacedName(key client.ObjectKey, obj client.Object) 
 		obj.SetAnnotations(map[string]string{})
 	}
 	annotations := obj.GetAnnotations()
-	annotations[constants.TraceIDAnnotation] = embedTraceID.TraceID
-	annotations[constants.SpanIDAnnotation] = embedTraceID.SpanID
+	annotations[constants.TraceIDAnnotation] = requestWithTraceID.TraceID
+	annotations[constants.SpanIDAnnotation] = requestWithTraceID.SpanID
 	annotations[constants.TraceIDTimeAnnotation] = time.Now().Format(time.RFC3339)
 	obj.SetAnnotations(annotations)
 	return nil
