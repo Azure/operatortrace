@@ -8,34 +8,21 @@ import (
 	"fmt"
 	"reflect"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
+	"k8s.io/apimachinery/pkg/types"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// getCallerKindFromNamespacedName extracts the caller kind from the key.Name
-func getCallerKindFromNamespacedName(key client.ObjectKey) string {
-	embedTraceID := &EmbedTraceID{}
-	if err := embedTraceID.FromString(key.Name); err != nil {
-		return ""
+func ClientObjectToRequestWithTraceID(key *ctrlclient.ObjectKey) tracingtypes.RequestWithTraceID {
+	return tracingtypes.RequestWithTraceID{
+		Request: ctrlreconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      key.Name,
+				Namespace: key.Namespace,
+			},
+		},
 	}
-	return embedTraceID.ObjectKind
-}
-
-// getCallerNameFromNamespacedName extracts the caller name from the key.Name
-func getCallerNameFromNamespacedName(key client.ObjectKey) string {
-	embedTraceID := &EmbedTraceID{}
-	if err := embedTraceID.FromString(key.Name); err != nil {
-		return ""
-	}
-	return embedTraceID.ObjectName
-}
-
-// getNameFromNamespacedName extracts the original name from the key.Name
-func getNameFromNamespacedName(key client.ObjectKey) string {
-	embedTraceID := &EmbedTraceID{}
-	if err := embedTraceID.FromString(key.Name); err != nil {
-		return key.Name
-	}
-	return embedTraceID.KeyName
 }
 
 func convertToString(value interface{}) (string, error) {
