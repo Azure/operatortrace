@@ -29,6 +29,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,21 +40,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type empty struct{}
 
-type requestWithTraceID struct {
-	NamespacedName reconcile.Request
-	TraceID        string
-	SpanID         string
-	SenderName     string
-	SenderKind     string
-	EventKind      string
-}
+type EventHandlerWithTrace = handler.TypedEventHandler[client.Object, tracingtypes.RequestWithTraceID]
 
-var _ handler.EventHandler = &enqueueRequestForOwner[client.Object]{}
+var _ EventHandlerWithTrace = &enqueueRequestForOwner[client.Object]{}
 
 // OwnerOption modifies an EnqueueRequestForOwner EventHandler.
 type OwnerOption func(e enqueueRequestForOwnerInterface)
@@ -66,7 +60,7 @@ type OwnerOption func(e enqueueRequestForOwnerInterface)
 // - a source.Kind Source with Type of Pod.
 //
 // - a handler.enqueueRequestForOwner EventHandler with an OwnerType of ReplicaSet and OnlyControllerOwner set to true.
-func EnqueueRequestForOwner(scheme *runtime.Scheme, mapper meta.RESTMapper, ownerType client.Object, opts ...OwnerOption) handler.EventHandler {
+func EnqueueRequestForOwner(scheme *runtime.Scheme, mapper meta.RESTMapper, ownerType client.Object, opts ...OwnerOption) EventHandlerWithTrace {
 	return TypedEnqueueRequestForOwner[client.Object](scheme, mapper, ownerType, opts...)
 }
 
@@ -80,7 +74,7 @@ func EnqueueRequestForOwner(scheme *runtime.Scheme, mapper meta.RESTMapper, owne
 // - a handler.typedEnqueueRequestForOwner EventHandler with an OwnerType of ReplicaSet and OnlyControllerOwner set to true.
 //
 // TypedEnqueueRequestForOwner is experimental and subject to future change.
-func TypedEnqueueRequestForOwner[object client.Object](scheme *runtime.Scheme, mapper meta.RESTMapper, ownerType client.Object, opts ...OwnerOption) handler.TypedEventHandler[object, reconcile.Request] {
+func TypedEnqueueRequestForOwner[object client.Object](scheme *runtime.Scheme, mapper meta.RESTMapper, ownerType client.Object, opts ...OwnerOption) handler.TypedEventHandler[object, tracingtypes.RequestWithTraceID] {
 	e := &enqueueRequestForOwner[object]{
 		ownerType: ownerType,
 		mapper:    mapper,
@@ -128,42 +122,38 @@ func (e *enqueueRequestForOwner[object]) setIsController(isController bool) {
 }
 
 // Create implements EventHandler.
-func (e *enqueueRequestForOwner[object]) Create(ctx context.Context, evt event.TypedCreateEvent[object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-	reqs := map[requestWithTraceID]empty{}
+func (e *enqueueRequestForOwner[object]) Create(ctx context.Context, evt event.TypedCreateEvent[object], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
+	reqs := map[tracingtypes.RequestWithTraceID]empty{}
 	e.getOwnerReconcileRequest(evt.Object, reqs, "new")
-	res := requestWithTraceIDToRequest(reqs)
-	for req := range res {
+	for req := range reqs {
 		q.Add(req)
 	}
 }
 
 // Update implements EventHandler.
-func (e *enqueueRequestForOwner[object]) Update(ctx context.Context, evt event.TypedUpdateEvent[object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-	reqs := map[requestWithTraceID]empty{}
+func (e *enqueueRequestForOwner[object]) Update(ctx context.Context, evt event.TypedUpdateEvent[object], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
+	reqs := map[tracingtypes.RequestWithTraceID]empty{}
 	e.getOwnerReconcileRequest(evt.ObjectOld, reqs, "old")
 	e.getOwnerReconcileRequest(evt.ObjectNew, reqs, "new")
-	res := requestWithTraceIDToRequest(reqs)
-	for req := range res {
+	for req := range reqs {
 		q.Add(req)
 	}
 }
 
 // Delete implements EventHandler.
-func (e *enqueueRequestForOwner[object]) Delete(ctx context.Context, evt event.TypedDeleteEvent[object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-	reqs := map[requestWithTraceID]empty{}
+func (e *enqueueRequestForOwner[object]) Delete(ctx context.Context, evt event.TypedDeleteEvent[object], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
+	reqs := map[tracingtypes.RequestWithTraceID]empty{}
 	e.getOwnerReconcileRequest(evt.Object, reqs, "new")
-	res := requestWithTraceIDToRequest(reqs)
-	for req := range res {
+	for req := range reqs {
 		q.Add(req)
 	}
 }
 
 // Generic implements EventHandler.
-func (e *enqueueRequestForOwner[object]) Generic(ctx context.Context, evt event.TypedGenericEvent[object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-	reqs := map[requestWithTraceID]empty{}
+func (e *enqueueRequestForOwner[object]) Generic(ctx context.Context, evt event.TypedGenericEvent[object], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
+	reqs := map[tracingtypes.RequestWithTraceID]empty{}
 	e.getOwnerReconcileRequest(evt.Object, reqs, "new")
-	res := requestWithTraceIDToRequest(reqs)
-	for req := range res {
+	for req := range reqs {
 		q.Add(req)
 	}
 }
@@ -188,7 +178,7 @@ func (e *enqueueRequestForOwner[object]) parseOwnerTypeGroupKind(scheme *runtime
 
 // getOwnerReconcileRequest looks at object and builds a map of reconcile.Request to reconcile
 // owners of object that match e.OwnerType.
-func (e *enqueueRequestForOwner[object]) getOwnerReconcileRequest(obj metav1.Object, result map[requestWithTraceID]empty, eventKind string) {
+func (e *enqueueRequestForOwner[object]) getOwnerReconcileRequest(obj metav1.Object, result map[tracingtypes.RequestWithTraceID]empty, eventKind string) {
 	// Iterate through the OwnerReferences looking for a match on Group and Kind against what was requested
 	// by the user
 	for _, ref := range e.getOwnersReferences(obj) {
@@ -216,8 +206,8 @@ func (e *enqueueRequestForOwner[object]) getOwnerReconcileRequest(obj metav1.Obj
 		// object in the event.
 		if ref.Kind == e.groupKind.Kind && refGV.Group == e.groupKind.Group {
 			// Match found - add a Request for the object referred to in the OwnerReference
-			request := requestWithTraceID{
-				NamespacedName: reconcile.Request{
+			request := tracingtypes.RequestWithTraceID{
+				Request: ctrlreconcile.Request{
 					NamespacedName: types.NamespacedName{
 						Name: ref.Name,
 					},
@@ -251,37 +241,6 @@ func (e *enqueueRequestForOwner[object]) getOwnerReconcileRequest(obj metav1.Obj
 			result[request] = empty{}
 		}
 	}
-}
-
-// Converts the reqeustWithTraceID map to a request map and uses the EmbedTraceIDInNamespacedName function to set the name
-func requestWithTraceIDToRequest(requests map[requestWithTraceID]empty) map[reconcile.Request]empty {
-	result := map[reconcile.Request]empty{}
-
-	// todo
-	// dedupe based on name, if the name is the same, choose the one that is "new" eventKind
-	// todo
-
-	for req := range requests {
-		key := reconcile.Request{}
-
-		var name string
-
-		if req.TraceID != "" && req.SpanID != "" {
-			name = fmt.Sprintf("%s;%s;%s;%s;%s", req.TraceID, req.SpanID, req.SenderKind, req.SenderName, req.NamespacedName.Name)
-		} else {
-			name = req.NamespacedName.Name
-		}
-
-		// Embed the trace ID in the NamespacedName
-		namespace := req.NamespacedName.Namespace
-		key.NamespacedName = types.NamespacedName{
-			Name:      name,
-			Namespace: namespace,
-		}
-
-		result[key] = empty{}
-	}
-	return result
 }
 
 // getOwnersReferences returns the OwnerReferences for an object as specified by the enqueueRequestForOwner
