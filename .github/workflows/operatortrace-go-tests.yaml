@@ -28,7 +28,9 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install dependencies
+        working-directory: operatortrace-go
         run: go mod download
 
       - name: Run all Go tests
+        working-directory: operatortrace-go
         run: go test -v ./...
