@@ -47,10 +47,6 @@ func overrideTraceIDFromNamespacedName(requestWithTraceID tracingtypes.RequestWi
 		return nil
 	}
 
-	if requestWithTraceID.TraceID == "" || requestWithTraceID.SpanID == "" {
-		return nil
-	}
-
 	if obj.GetAnnotations() == nil {
 		obj.SetAnnotations(map[string]string{})
 	}

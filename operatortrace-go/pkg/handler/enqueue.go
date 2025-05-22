@@ -68,7 +68,7 @@ func (e *TypedEnqueueRequestForObject[T]) Update(ctx context.Context, evt event.
 	case !isNil(evt.ObjectNew):
 		q.Add(objectToRequestWithTraceID(evt.ObjectNew))
 	case !isNil(evt.ObjectOld):
-		q.Add(objectToRequestWithTraceID(evt.ObjectOld))
+		// Do not enqueue the old object, as it is not the source of the event.
 	default:
 		// No object to enqueue
 	}
