@@ -5,5 +5,7 @@ metadata:
     app.kubernetes.io/name: example-operator
     app.kubernetes.io/managed-by: kustomize
   name: sample-sample
+  namespace: monitoring
 spec:
-  # TODO(user): Add fields here
+  foo: "hello"
+  bar: 1
