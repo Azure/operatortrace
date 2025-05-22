@@ -18,7 +18,7 @@ import (
 )
 
 func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
-	pred := predicates.IgnoreTraceAnnotationUpdatePredicate[client.Object]{}
+	pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
 
 	t.Run("only trace ID and resource version annotations changed", func(t *testing.T) {
 		oldPod := &corev1.Pod{
