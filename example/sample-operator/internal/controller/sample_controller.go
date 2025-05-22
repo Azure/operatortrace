@@ -21,15 +21,14 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
 
 	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
-	tracinghandler "github.com/Azure/operatortrace/operatortrace-go/pkg/handler"
 	tracingpredicates "github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
 	tracingreconcile "github.com/Azure/operatortrace/operatortrace-go/pkg/reconcile"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
@@ -65,26 +64,36 @@ func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient operatortrace.TracingClient) error {
-	opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
-		Reconciler: tracingreconcile.AsTracingReconciler[*appv1.Sample](
-			tracingClient,
-			r,
-		),
-	}
-	c, err := controller.NewTyped("sample", mgr, opt)
-	if err != nil {
-		return err
-	}
-	err = c.Watch(
-		source.TypedKind[*appv1.Sample, tracingtypes.RequestWithTraceID](
-			mgr.GetCache(),
+	// opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
+	// 	Reconciler: tracingreconcile.AsTracingReconciler(
+	// 		tracingClient,
+	// 		r,
+	// 	),
+	// }
+	// c, err := controller.NewTyped("sample", mgr, opt)
+	// if err != nil {
+	// 	return err
+	// }
+	// err = c.Watch(
+	// 	source.TypedKind(
+	// 		mgr.GetCache(),
+	// 		&appv1.Sample{},
+	// 		&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample]{},
+	// 		tracingpredicates.IgnoreTraceAnnotationUpdatePredicate[*appv1.Sample]{},
+	// 		predicate.TypedResourceVersionChangedPredicate[*appv1.Sample]{},
+	// 	),
+	// )
+	// if err != nil {
+	// 	return err
+	// }
+	// return nil
+	return builder.TypedControllerManagedBy[tracingtypes.RequestWithTraceID](mgr).
+		For(
 			&appv1.Sample{},
-			&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample]{},
-			tracingpredicates.IgnoreTraceAnnotationUpdatePredicate[*appv1.Sample]{},
-		),
-	)
-	if err != nil {
-		return err
-	}
-	return nil
+			builder.WithPredicates(
+				tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		Complete(tracingreconcile.AsTracingReconciler(tracingClient, r))
 }
