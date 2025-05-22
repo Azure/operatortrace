@@ -28,15 +28,15 @@ package handler
 import (
 	"context"
 
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // MapFunc is the signature required for enqueueing requests from a generic function.
 // This type is usually used with EnqueueRequestsFromMapFunc when registering an event handler.
-type MapFunc = TypedMapFunc[client.Object, reconcile.Request]
+type MapFunc = TypedMapFunc[client.Object, tracingtypes.RequestWithTraceID]
 
 // TypedMapFunc is the signature required for enqueueing requests from a generic function.
 // This type is usually used with EnqueueRequestsFromTypedMapFunc when registering an event handler.
@@ -76,7 +76,7 @@ func TypedEnqueueRequestsFromMapFunc[object any, request comparable](fn TypedMap
 	}
 }
 
-var _ EventHandler = &enqueueRequestsFromMapFunc[client.Object, reconcile.Request]{}
+var _ EventHandler = &enqueueRequestsFromMapFunc[client.Object, tracingtypes.RequestWithTraceID]{}
 
 type enqueueRequestsFromMapFunc[object any, request comparable] struct {
 	// Mapper transforms the argument into a slice of keys to be reconciled

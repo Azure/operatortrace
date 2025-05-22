@@ -28,10 +28,10 @@ package handler
 import (
 	"context"
 
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // EventHandler enqueues reconcile.Requests in response to events (e.g. Pod Create).  EventHandlers map an Event
@@ -52,7 +52,7 @@ import (
 //
 // Unless you are implementing your own EventHandler, you can ignore the functions on the EventHandler interface.
 // Most users shouldn't need to implement their own EventHandler.
-type EventHandler = TypedEventHandler[client.Object, reconcile.Request]
+type EventHandler = TypedEventHandler[client.Object, tracingtypes.RequestWithTraceID]
 
 // TypedEventHandler enqueues reconcile.Requests in response to events (e.g. Pod Create). TypedEventHandlers map an Event
 // for one object to trigger Reconciles for either the same object or different objects - e.g. if there is an
@@ -92,7 +92,7 @@ type TypedEventHandler[object any, request comparable] interface {
 var _ EventHandler = Funcs{}
 
 // Funcs implements eventhandler.
-type Funcs = TypedFuncs[client.Object, reconcile.Request]
+type Funcs = TypedFuncs[client.Object, tracingtypes.RequestWithTraceID]
 
 // TypedFuncs implements eventhandler.
 //

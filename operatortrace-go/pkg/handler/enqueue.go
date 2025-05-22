@@ -29,11 +29,13 @@ import (
 	"context"
 	"reflect"
 
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type empty struct{}
@@ -53,54 +55,39 @@ type EnqueueRequestForObject = TypedEnqueueRequestForObject[client.Object]
 type TypedEnqueueRequestForObject[object client.Object] struct{}
 
 // Create implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Create(ctx context.Context, evt event.TypedCreateEvent[T], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T]) Create(ctx context.Context, evt event.TypedCreateEvent[T], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
 	if isNil(evt.Object) {
 		return
 	}
-	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-		Name:      evt.Object.GetName(),
-		Namespace: evt.Object.GetNamespace(),
-	}})
+	q.Add(objectToRequestWithTraceID(evt.Object))
 }
 
 // Update implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Update(ctx context.Context, evt event.TypedUpdateEvent[T], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T]) Update(ctx context.Context, evt event.TypedUpdateEvent[T], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
 	switch {
 	case !isNil(evt.ObjectNew):
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-			Name:      evt.ObjectNew.GetName(),
-			Namespace: evt.ObjectNew.GetNamespace(),
-		}})
+		q.Add(objectToRequestWithTraceID(evt.ObjectNew))
 	case !isNil(evt.ObjectOld):
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-			Name:      evt.ObjectOld.GetName(),
-			Namespace: evt.ObjectOld.GetNamespace(),
-		}})
+		q.Add(objectToRequestWithTraceID(evt.ObjectOld))
 	default:
 		// No object to enqueue
 	}
 }
 
 // Delete implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Delete(ctx context.Context, evt event.TypedDeleteEvent[T], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T]) Delete(ctx context.Context, evt event.TypedDeleteEvent[T], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
 	if isNil(evt.Object) {
 		return
 	}
-	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-		Name:      evt.Object.GetName(),
-		Namespace: evt.Object.GetNamespace(),
-	}})
+	q.Add(objectToRequestWithTraceID(evt.Object))
 }
 
 // Generic implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Generic(ctx context.Context, evt event.TypedGenericEvent[T], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T]) Generic(ctx context.Context, evt event.TypedGenericEvent[T], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
 	if isNil(evt.Object) {
 		return
 	}
-	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-		Name:      evt.Object.GetName(),
-		Namespace: evt.Object.GetNamespace(),
-	}})
+	q.Add(objectToRequestWithTraceID(evt.Object))
 }
 
 func isNil(arg any) bool {
@@ -113,4 +100,25 @@ func isNil(arg any) bool {
 		return true
 	}
 	return false
+}
+
+func objectToRequestWithTraceID(obj client.Object) tracingtypes.RequestWithTraceID {
+
+	traceId := obj.GetAnnotations()[constants.TraceIDAnnotation]
+	spanId := obj.GetAnnotations()[constants.SpanIDAnnotation]
+	senderName := obj.GetName()
+	senderKind := obj.GetObjectKind().GroupVersionKind().Kind
+
+	return tracingtypes.RequestWithTraceID{
+		Request: ctrlreconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      obj.GetName(),
+				Namespace: obj.GetNamespace(),
+			},
+		},
+		TraceID:    traceId,
+		SpanID:     spanId,
+		SenderName: senderName,
+		SenderKind: senderKind,
+	}
 }
