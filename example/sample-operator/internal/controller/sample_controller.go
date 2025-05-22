@@ -76,7 +76,7 @@ func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient oper
 			mgr.GetCache(),
 			&appv1.Sample{},
 			&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample]{},
-			tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
+			tracingpredicates.IgnoreTraceAnnotationUpdatePredicate[*appv1.Sample]{},
 		),
 	)
 	if err != nil {

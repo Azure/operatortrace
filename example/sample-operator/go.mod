@@ -7,6 +7,7 @@ toolchain go1.24.2
 godebug default=go1.23
 
 require (
+	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522043830-8c7f60daad43
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	k8s.io/apimachinery v0.33.1
@@ -23,7 +24,6 @@ require (
 
 require (
 	cel.dev/expr v0.20.0 // indirect
-	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522035038-07eb6456ae62
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

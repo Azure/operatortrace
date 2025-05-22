@@ -21,8 +21,8 @@ type IgnoreTraceAnnotationUpdatePredicate[T client.Object] struct {
 }
 
 // Update implements the update event check for the predicate.
-func (IgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.UpdateEvent) bool {
-	if e.ObjectOld == nil || e.ObjectNew == nil {
+func (IgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEvent[T]) bool {
+	if e.ObjectOld.DeepCopyObject() == nil || e.ObjectNew.DeepCopyObject() == nil {
 		return true
 	}
 
