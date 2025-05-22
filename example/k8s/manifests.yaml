@@ -500,33 +500,7 @@ data:
         url: http://tempo.monitoring.svc.cluster.local:3200
         jsonData:
           httpHeaderName1: "X-Scope-OrgID"
-          httpHeaderValue1: "1" 
----
-apiVersion: apps/v1  
-kind: Deployment  
-metadata:  
-  name: example-operator  
-  namespace: monitoring  
-spec:  
-  replicas: 1  
-  selector:  
-    matchLabels:  
-      app: example-operator  
-  template:  
-    metadata:  
-      labels:  
-        app: example-operator  
-    spec:  
-      serviceAccountName: example-operator-sa  
-      containers:  
-        - name: example-operator  
-          image: localhost:5001/example-operator:latest  
-          imagePullPolicy: Always  
-          ports:  
-            - containerPort: 8080  
-          env:  
-            - name: TEMPO_ENDPOINT  
-              value: "tempo.monitoring.svc.cluster.local:4318" 
+          httpHeaderValue1: "1"
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -559,20 +533,3 @@ metadata:
 spec:
   ca:
     secretName: root-secret
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: kubetracer-webhook-cert
-  namespace: monitoring
-spec:
-  secretName: kubetracer-webhook-cert-tls
-  duration: 24h
-  renewBefore: 12h
-  commonName: kubetracer-webhook.monitoring.svc
-  dnsNames:
-  - kubetracer-webhook.monitoring.svc
-  issuerRef:
-    name: my-ca-issuer
-    kind: ClusterIssuer
-    group: cert-manager.io

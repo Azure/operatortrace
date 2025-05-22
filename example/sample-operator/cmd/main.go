@@ -252,12 +252,21 @@ func main() {
 		os.Exit(1)
 	}
 
-tracingtypes.NewControllerManagedBy(mgr).
+	// Create the tracing client
+	tracingClient := operatortrace.NewTracingClient(
+		mgr.GetClient(),
+		mgr.GetAPIReader(),
+		otel.Tracer("operatortrace"),
+		logger,
+		mgr.GetScheme(),
+	)
 
-	if err = (&controller.SampleReconciler{
-		Client: operatortrace.NewTracingClient(mgr.GetClient(), mgr.GetAPIReader(), otel.Tracer("operatortrace"), logger, mgr.GetScheme()),
+	sampleReconciler := &controller.SampleReconciler{
+		Client: tracingClient,
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	if err = sampleReconciler.SetupWithManager(mgr, tracingClient); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Sample")
 		os.Exit(1)
 	}

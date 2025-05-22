@@ -1,8 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+// pkg/handler/enqueue_owner.go
 
 /*
-Forked from: https://github.com/kubernetes-sigs/controller-runtime/blob/v0.20.3/pkg/handler/enqueue_owner.go
+Forked from: https://github.com/kubernetes-sigs/controller-runtime/blob/v0.19.6/pkg/handler/
 Has been modified to suit the project's needs.
 */
 
@@ -42,8 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
-
-type empty struct{}
 
 type EventHandlerWithTrace = handler.TypedEventHandler[client.Object, tracingtypes.RequestWithTraceID]
 

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -27,7 +28,11 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
+	tracingreconcile "github.com/Azure/operatortrace/operatortrace-go/pkg/reconcile"
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	appv1 "github.com/azure/operatortrace/example/example-operator/api/v1"
+	otelnoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ = Describe("Sample Controller", func() {
@@ -67,15 +72,30 @@ var _ = Describe("Sample Controller", func() {
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &SampleReconciler{
+			By("Reconciling the created resource via tracing wrapper")
+			tracer := otelnoop.NewTracerProvider().Tracer("test-tracer")
+			tracingClient := operatortrace.NewTracingClient(
+				k8sClient,
+				k8sClient,
+				tracer,
+				logr.Discard(),
+				k8sClient.Scheme(),
+			)
+
+			sampleReconciler := &SampleReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			tracingReconciler := tracingreconcile.AsTracingReconciler(tracingClient, sampleReconciler)
+
+			tracingRequest := tracingtypes.RequestWithTraceID{
+				Request: reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				},
+			}
+
+			_, err := tracingReconciler.Reconcile(ctx, tracingRequest)
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
