@@ -21,12 +21,6 @@ import (
 func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.Object, scheme *runtime.Scheme, operationName string) (context.Context, trace.Span) {
 	span := trace.SpanFromContext(ctx)
 	if span.SpanContext().IsValid() {
-		spanContext := trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID: span.SpanContext().TraceID(),
-			SpanID:  span.SpanContext().SpanID(),
-			Remote:  true,
-		})
-		ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
 		ctx, span = tracer.Start(ctx, operationName)
 		return ctx, span
 	}
@@ -46,14 +40,16 @@ func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.
 								if spanID, err := getConditionMessage("SpanID", obj, scheme); err == nil {
 									if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
 										spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-											TraceID: traceIDValue,
-											SpanID:  spanIDValue,
-											Remote:  true,
+											TraceID:    traceIDValue,
+											SpanID:     spanIDValue,
+											Remote:     true,
+											TraceFlags: trace.FlagsSampled,
 										})
 									} else {
 										spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-											TraceID: traceIDValue,
-											Remote:  true,
+											TraceID:    traceIDValue,
+											Remote:     true,
+											TraceFlags: trace.FlagsSampled,
 										})
 									}
 								}
@@ -77,14 +73,16 @@ func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.
 										if spanID, ok := obj.GetAnnotations()[constants.SpanIDAnnotation]; ok {
 											if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
 												spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-													TraceID: traceIDValue,
-													SpanID:  spanIDValue,
-													Remote:  true,
+													TraceID:    traceIDValue,
+													SpanID:     spanIDValue,
+													Remote:     true,
+													TraceFlags: trace.FlagsSampled,
 												})
 											} else {
 												spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-													TraceID: traceIDValue,
-													Remote:  true,
+													TraceID:    traceIDValue,
+													Remote:     true,
+													TraceFlags: trace.FlagsSampled,
 												})
 											}
 										}
