@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	appv1 "github.com/azure/operatortrace/example/example-operator/api/v1"
+	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
 	// +kubebuilder:scaffold:imports
 )
 

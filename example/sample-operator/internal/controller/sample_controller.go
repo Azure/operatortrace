@@ -23,14 +23,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	appv1 "github.com/azure/operatortrace/example/example-operator/api/v1"
+	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
 
 	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
-	tracingreconcile "github.com/Azure/operatortrace/operatortrace-go/pkg/reconcile"
+	tracinghandler "github.com/Azure/operatortrace/operatortrace-go/pkg/handler"
+	tracingpredicates "github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 )
 
@@ -53,8 +53,8 @@ type SampleReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.4/pkg/reconcile
-func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithValues("node", obj.GetName())
+func (r *SampleReconciler) Reconcile(ctx context.Context, req tracingtypes.RequestWithTraceID) (ctrl.Result, error) {
+	log := log.FromContext(ctx).WithValues("node", req.Name)
 	log.V(1).Info("reconciling Sample")
 
 	// TODO(user): your logic here
@@ -64,25 +64,23 @@ func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient operatortrace.TracingClient) error {
-
 	opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
-		Reconciler: tracingreconcile.AsTracingReconciler[*appv1.Sample](
-			tracingClient,
-			r,
-		),
+		Reconciler: r,
 	}
-
 	c, err := controller.NewTyped("sample", mgr, opt)
 	if err != nil {
 		return err
 	}
-
 	err = c.Watch(
-		source.TypedKind[tracingtypes.RequestWithTraceID](
+		source.TypedKind[*appv1.Sample, tracingtypes.RequestWithTraceID](
 			mgr.GetCache(),
 			&appv1.Sample{},
-			handler.TypedEnqueueRequestForObject{},
+			&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample]{},
+			tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
 		),
 	)
-
+	if err != nil {
+		return err
+	}
+	return nil
 }

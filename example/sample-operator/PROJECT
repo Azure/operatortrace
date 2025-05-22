@@ -6,7 +6,7 @@ domain: azure.microsoft.com
 layout:
 - go.kubebuilder.io/v4
 projectName: example-operator
-repo: github.com/azure/operatortrace/example/example-operator
+repo: github.com/Azure/operatortrace/example/example-operator
 resources:
 - api:
     crdVersion: v1
@@ -15,6 +15,6 @@ resources:
   domain: azure.microsoft.com
   group: app
   kind: Sample
-  path: github.com/azure/operatortrace/example/example-operator/api/v1
+  path: github.com/Azure/operatortrace/example/example-operator/api/v1
   version: v1
 version: "3"

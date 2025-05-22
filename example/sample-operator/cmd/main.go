@@ -44,8 +44,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	appv1 "github.com/azure/operatortrace/example/example-operator/api/v1"
-	"github.com/azure/operatortrace/example/example-operator/internal/controller"
+	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
+	"github.com/Azure/operatortrace/example/example-operator/internal/controller"
 
 	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
 	// +kubebuilder:scaffold:imports

@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/azure/operatortrace/example/example-operator/test/utils"
+	"github.com/Azure/operatortrace/example/example-operator/test/utils"
 )
 
 var (

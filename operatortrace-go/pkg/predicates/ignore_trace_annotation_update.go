@@ -16,12 +16,12 @@ import (
 
 // IgnoreTraceAnnotationUpdatePredicate implements a predicate that ignores updates
 // where only the trace ID and span ID annotations, or resource version changes.
-type IgnoreTraceAnnotationUpdatePredicate struct {
+type IgnoreTraceAnnotationUpdatePredicate[T client.Object] struct {
 	predicate.Funcs
 }
 
 // Update implements the update event check for the predicate.
-func (IgnoreTraceAnnotationUpdatePredicate) Update(e event.UpdateEvent) bool {
+func (IgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.UpdateEvent) bool {
 	if e.ObjectOld == nil || e.ObjectNew == nil {
 		return true
 	}
@@ -55,7 +55,7 @@ func HasSignificantUpdate(oldObj, newObj runtime.Object) bool {
 		ObjectOld: oldObj.(client.Object),
 		ObjectNew: newObj.(client.Object),
 	}
-	predicate := IgnoreTraceAnnotationUpdatePredicate{}
+	predicate := IgnoreTraceAnnotationUpdatePredicate[client.Object]{}
 	return predicate.Update(updateEvent)
 }
 

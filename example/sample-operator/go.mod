@@ -1,4 +1,4 @@
-module github.com/azure/operatortrace/example/example-operator
+module github.com/Azure/operatortrace/example/example-operator
 
 go 1.24.0
 
@@ -23,7 +23,7 @@ require (
 
 require (
 	cel.dev/expr v0.20.0 // indirect
-	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha
+	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522035038-07eb6456ae62
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

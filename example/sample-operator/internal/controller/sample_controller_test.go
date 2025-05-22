@@ -28,10 +28,10 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
 	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
 	tracingreconcile "github.com/Azure/operatortrace/operatortrace-go/pkg/reconcile"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
-	appv1 "github.com/azure/operatortrace/example/example-operator/api/v1"
 	otelnoop "go.opentelemetry.io/otel/trace/noop"
 )
 
