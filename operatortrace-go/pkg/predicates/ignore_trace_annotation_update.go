@@ -21,12 +21,12 @@ type IgnoreTraceAnnotationUpdatePredicate[T client.Object] struct {
 }
 
 // Create implements the create event check for the predicate.
-func (IgnoreTraceAnnotationUpdatePredicate[T]) Create(e event.TypedUpdateEvent[T]) bool {
+func (IgnoreTraceAnnotationUpdatePredicate[T]) Create(e event.TypedCreateEvent[T]) bool {
 	return true
 }
 
 // Delete implements the delete event check for the predicate.
-func (IgnoreTraceAnnotationUpdatePredicate[T]) Delete(e event.TypedUpdateEvent[T]) bool {
+func (IgnoreTraceAnnotationUpdatePredicate[T]) Delete(e event.TypedDeleteEvent[T]) bool {
 	return true
 }
 
