@@ -4,6 +4,8 @@ github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522045527-e9
 github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522045527-e96b55fc6243/go.mod h1:xNXWu1Uw2lnJRu1NDsSCo4J+0x6LZ2DWxTfWdV7YczU=
 github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522045834-2f5be3820363 h1:Td2KGEXGM4XpZoDaHONazpzr0+nzLOk80zy4RmVlVMI=
 github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522045834-2f5be3820363/go.mod h1:xNXWu1Uw2lnJRu1NDsSCo4J+0x6LZ2DWxTfWdV7YczU=
+github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522050512-6f7b77673453 h1:K3Tq2ExQ9nDx6ZkeVVrkgtEmhNTKI/KzZxRAIOrE6X4=
+github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522050512-6f7b77673453/go.mod h1:xNXWu1Uw2lnJRu1NDsSCo4J+0x6LZ2DWxTfWdV7YczU=
 github.com/antlr4-go/antlr/v4 v4.13.0 h1:lxCg3LAv+EUK6t1i0y1V6/SLeUi0eKEKdhQAlS8TVTI=
 github.com/antlr4-go/antlr/v4 v4.13.0/go.mod h1:pfChB/xh/Unjila75QW7+VU4TSnWnnk9UTnmpPaOR2g=
 github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a h1:idn718Q4B6AGu/h5Sxe66HYVdqdGu2l9Iebqhi/AEoA=

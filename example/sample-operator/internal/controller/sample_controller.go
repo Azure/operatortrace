@@ -31,6 +31,7 @@ import (
 	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
 	tracinghandler "github.com/Azure/operatortrace/operatortrace-go/pkg/handler"
 	tracingpredicates "github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
+	tracingreconcile "github.com/Azure/operatortrace/operatortrace-go/pkg/reconcile"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 )
 
@@ -53,8 +54,8 @@ type SampleReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.4/pkg/reconcile
-func (r *SampleReconciler) Reconcile(ctx context.Context, req tracingtypes.RequestWithTraceID) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithValues("node", req.Name)
+func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ctrl.Result, error) {
+	log := log.FromContext(ctx).WithValues("node", obj.Name)
 	log.V(1).Info("reconciling Sample")
 
 	// TODO(user): your logic here
@@ -65,7 +66,10 @@ func (r *SampleReconciler) Reconcile(ctx context.Context, req tracingtypes.Reque
 // SetupWithManager sets up the controller with the Manager.
 func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient operatortrace.TracingClient) error {
 	opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
-		Reconciler: r,
+		Reconciler: tracingreconcile.AsTracingReconciler[*appv1.Sample](
+			tracingClient,
+			r,
+		),
 	}
 	c, err := controller.NewTyped("sample", mgr, opt)
 	if err != nil {

@@ -30,6 +30,11 @@ func (IgnoreTraceAnnotationUpdatePredicate[T]) Delete(e event.TypedDeleteEvent[T
 	return true
 }
 
+// Generic implements the generic event check for the predicate.
+func (IgnoreTraceAnnotationUpdatePredicate[T]) Generic(e event.TypedGenericEvent[T]) bool {
+	return true
+}
+
 // Update implements the update event check for the predicate.
 func (IgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEvent[T]) bool {
 	if e.ObjectOld.DeepCopyObject() == nil || e.ObjectNew.DeepCopyObject() == nil {

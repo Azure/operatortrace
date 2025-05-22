@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522045834-2f5be3820363 // indirect
+	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522050512-6f7b77673453 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 	github.com/samber/lo v1.50.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
