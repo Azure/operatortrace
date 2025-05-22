@@ -20,6 +20,16 @@ type IgnoreTraceAnnotationUpdatePredicate[T client.Object] struct {
 	predicate.Funcs
 }
 
+// Create implements the create event check for the predicate.
+func (IgnoreTraceAnnotationUpdatePredicate[T]) Create(e event.TypedUpdateEvent[T]) bool {
+	return true
+}
+
+// Delete implements the delete event check for the predicate.
+func (IgnoreTraceAnnotationUpdatePredicate[T]) Delete(e event.TypedUpdateEvent[T]) bool {
+	return true
+}
+
 // Update implements the update event check for the predicate.
 func (IgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEvent[T]) bool {
 	if e.ObjectOld.DeepCopyObject() == nil || e.ObjectNew.DeepCopyObject() == nil {
