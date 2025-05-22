@@ -34,59 +34,55 @@ func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.
 		if obj != nil {
 			// no valid trace ID in context, check object conditions
 			if traceID, err := getConditionMessage("TraceID", obj, scheme); err == nil {
-				if traceID != "" {
-					// Check if the traceID is more than 10 minutes old, if it is, we will not use it
-					if traceIdTime, err := getConditionTime("TraceID", obj, scheme); err == nil {
-						if traceIdTime.Time.Before(metav1.Now().Add(-constants.TraceExpirationTime * time.Minute)) {
-							logger.Info("TraceID is more than " + strconv.Itoa(constants.TraceExpirationTime) + " minutes old, not using it")
-						} else {
-							if traceIDValue, err := trace.TraceIDFromHex(traceID); err == nil {
-								spanContext := trace.NewSpanContext(trace.SpanContextConfig{})
-								if spanID, err := getConditionMessage("SpanID", obj, scheme); err == nil {
-									if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
-										spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-											TraceID: traceIDValue,
-											SpanID:  spanIDValue,
-										})
-									} else {
-										spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-											TraceID: traceIDValue,
-										})
-									}
+				// Check if the traceID is more than 20 minutes old, if it is, we will not use it
+				if traceIdTime, err := getConditionTime("TraceID", obj, scheme); err == nil {
+					if traceIdTime.Time.Before(metav1.Now().Add(-constants.TraceExpirationTime * time.Minute)) {
+						logger.Info("TraceID is more than " + strconv.Itoa(constants.TraceExpirationTime) + " minutes old, not using it")
+					} else {
+						if traceIDValue, err := trace.TraceIDFromHex(traceID); err == nil {
+							spanContext := trace.NewSpanContext(trace.SpanContextConfig{})
+							if spanID, err := getConditionMessage("SpanID", obj, scheme); err == nil {
+								if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
+									spanContext = trace.NewSpanContext(trace.SpanContextConfig{
+										TraceID: traceIDValue,
+										SpanID:  spanIDValue,
+									})
+								} else {
+									spanContext = trace.NewSpanContext(trace.SpanContextConfig{
+										TraceID: traceIDValue,
+									})
 								}
-								ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
 							}
+							ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
 						}
 					}
 				}
 			} else {
 				// No valid trace ID in context, check object annotations
 				if traceID, ok := obj.GetAnnotations()[constants.TraceIDAnnotation]; ok {
-					if traceID != "" {
-						// Check if the traceID is more than 10 minutes (from constants) old, if it is, we will not use it
-						if traceIDTime, ok := obj.GetAnnotations()[constants.TraceIDTimeAnnotation]; ok {
-							if traceIdTimeValue, err := time.Parse(time.RFC3339, traceIDTime); err == nil {
-								if traceIdTimeValue.Before(time.Now().Add(-constants.TraceExpirationTime * time.Minute)) {
-									logger.Info("TraceID is more than " + strconv.Itoa(constants.TraceExpirationTime) + " minutes old, not using it")
-								} else {
-									if traceIDValue, err := trace.TraceIDFromHex(traceID); err == nil {
-										spanContext := trace.NewSpanContext(trace.SpanContextConfig{})
-										if spanID, ok := obj.GetAnnotations()[constants.SpanIDAnnotation]; ok {
-											if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
-												spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-													TraceID: traceIDValue,
-													SpanID:  spanIDValue,
-												})
-											} else {
-												spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-													TraceID: traceIDValue,
-												})
-											}
+					// Check if the traceID is more than 10 minutes (from constants) old, if it is, we will not use it
+					if traceIDTime, ok := obj.GetAnnotations()[constants.TraceIDTimeAnnotation]; ok {
+						if traceIdTimeValue, err := time.Parse(time.RFC3339, traceIDTime); err == nil {
+							if traceIdTimeValue.Before(time.Now().Add(-constants.TraceExpirationTime * time.Minute)) {
+								logger.Info("TraceID is more than " + strconv.Itoa(constants.TraceExpirationTime) + " minutes old, not using it")
+							} else {
+								if traceIDValue, err := trace.TraceIDFromHex(traceID); err == nil {
+									spanContext := trace.NewSpanContext(trace.SpanContextConfig{})
+									if spanID, ok := obj.GetAnnotations()[constants.SpanIDAnnotation]; ok {
+										if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
+											spanContext = trace.NewSpanContext(trace.SpanContextConfig{
+												TraceID: traceIDValue,
+												SpanID:  spanIDValue,
+											})
+										} else {
+											spanContext = trace.NewSpanContext(trace.SpanContextConfig{
+												TraceID: traceIDValue,
+											})
 										}
-										ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
-									} else {
-										logger.Error(err, "Invalid trace ID", "traceID", traceID)
 									}
+									ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
+								} else {
+									logger.Error(err, "Invalid trace ID", "traceID", traceID)
 								}
 							}
 						}
