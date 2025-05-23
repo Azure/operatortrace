@@ -7,7 +7,6 @@ toolchain go1.24.2
 godebug default=go1.23
 
 require (
-	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522053511-707e07ea61a6
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	k8s.io/apimachinery v0.33.1
@@ -16,6 +15,7 @@ require (
 )
 
 require (
+	github.com/Azure/operatortrace/operatortrace-go v0.3.0-alpha.0.20250522225425-cda490e67a6c // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 	github.com/samber/lo v1.50.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect

@@ -56,7 +56,10 @@ var _ = Describe("Sample Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: appv1.SampleSpec{
+						Foo: "bar",
+						Bar: 1,
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -83,7 +86,7 @@ var _ = Describe("Sample Controller", func() {
 			)
 
 			sampleReconciler := &SampleReconciler{
-				Client: k8sClient,
+				Client: tracingClient,
 				Scheme: k8sClient.Scheme(),
 			}
 

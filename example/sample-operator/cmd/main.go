@@ -84,6 +84,8 @@ func initTracer(ctx context.Context) func() {
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String("example-service"),
 		)),
+		// This is important to set the sampler to ParentBased, so that the trace ID is propagated across reconciles
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
 	)
 
 	// Set the global trace provider

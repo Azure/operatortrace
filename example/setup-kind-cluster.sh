@@ -23,7 +23,13 @@ if cluster_exists; then
     docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile sample-operator/
     docker push localhost:${reg_port}/sample-operator:latest
 
+
+    echo "Deleting existing sample-operator deployment... if it exists"
+    kubectl -n monitoring delete deployment sample-operator --ignore-not-found 
+
     cd sample-operator && make manifests && make install && make deploy
+
+    kubectl apply -f sample-operator/config/samples/app_v1_sample.yaml
 
     exit 0
 fi
@@ -101,3 +107,6 @@ docker push localhost:${reg_port}/sample-operator:latest
 # 10. Install the operator CRDs
 echo "Installing operator CRDs using make install..."  
 cd sample-operator && make manifests && make install && make deploy
+
+# 11. add CRD to trigger reconciler
+kubectl apply -f sample-operator/config/samples/app_v1_sample.yaml

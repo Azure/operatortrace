@@ -59,40 +59,47 @@ spec:
           type: RuntimeDefault
       containers:
       - command:
-        - /manager
+          - /dlv
         args:
-          - --leader-elect
-          - --health-probe-bind-address=:8081
+          - exec
+          - /manager
+          - --headless
+          - --listen=:40000
+          - --api-version=2
+          - --accept-multiclient
+          - --log
         image: localhost:5001/sample-operator:latest
         imagePullPolicy: Always
         name: sample-operator
-        env:  
-          - name: TEMPO_ENDPOINT  
+        env:
+          - name: TEMPO_ENDPOINT
             value: "tempo.monitoring.svc.cluster.local:4318"
-        ports: []
+        ports:  
+          - containerPort: 40000
+          - containerPort: 8081
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
             - "ALL"
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 8081
-          initialDelaySeconds: 5
-          periodSeconds: 10
+        # livenessProbe:
+        #   httpGet:
+        #     path: /healthz
+        #     port: 8081
+        #   initialDelaySeconds: 15
+        #   periodSeconds: 20
+        # readinessProbe:
+        #   httpGet:
+        #     path: /readyz
+        #     port: 8081
+        #   initialDelaySeconds: 5
+        #   periodSeconds: 10
         # TODO(user): Configure the resources accordingly based on the project requirements.
         # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
             cpu: 500m
-            memory: 128Mi
+            memory: 512Mi
           requests:
             cpu: 10m
             memory: 64Mi

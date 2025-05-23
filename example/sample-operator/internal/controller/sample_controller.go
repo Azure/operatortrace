@@ -29,6 +29,7 @@ import (
 	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
 
 	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
+	tracinghandler "github.com/Azure/operatortrace/operatortrace-go/pkg/handler"
 	tracingpredicates "github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
 	tracingreconcile "github.com/Azure/operatortrace/operatortrace-go/pkg/reconcile"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
@@ -36,7 +37,7 @@ import (
 
 // SampleReconciler reconciles a Sample object
 type SampleReconciler struct {
-	client.Client
+	Client operatortrace.TracingClient
 	Scheme *runtime.Scheme
 }
 
@@ -54,42 +55,29 @@ type SampleReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.4/pkg/reconcile
 func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithValues("node", obj.Name)
+	log := log.FromContext(ctx).WithValues("sample", obj.Name)
 	log.V(1).Info("reconciling Sample")
 
-	// TODO(user): your logic here
+	// create a new sample object if spec.bar is less than 5, increment spec.bar
+	if obj.Spec.Bar < 5 {
+		obj.Spec.Bar++
+		log.V(1).Info("incrementing bar", "bar", obj.Spec.Bar)
+	} else {
+		log.V(1).Info("bar is greater than 5, not incrementing")
+	}
+	// update the sample object
+	r.Client.Update(ctx, obj)
 
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient operatortrace.TracingClient) error {
-	// opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
-	// 	Reconciler: tracingreconcile.AsTracingReconciler(
-	// 		tracingClient,
-	// 		r,
-	// 	),
-	// }
-	// c, err := controller.NewTyped("sample", mgr, opt)
-	// if err != nil {
-	// 	return err
-	// }
-	// err = c.Watch(
-	// 	source.TypedKind(
-	// 		mgr.GetCache(),
-	// 		&appv1.Sample{},
-	// 		&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample]{},
-	// 		tracingpredicates.IgnoreTraceAnnotationUpdatePredicate[*appv1.Sample]{},
-	// 		predicate.TypedResourceVersionChangedPredicate[*appv1.Sample]{},
-	// 	),
-	// )
-	// if err != nil {
-	// 	return err
-	// }
-	// return nil
 	return builder.TypedControllerManagedBy[tracingtypes.RequestWithTraceID](mgr).
-		For(
+		Named("sample").
+		Watches(
 			&appv1.Sample{},
+			&tracinghandler.TypedEnqueueRequestForObject[client.Object]{},
 			builder.WithPredicates(
 				tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
 				predicate.ResourceVersionChangedPredicate{},
