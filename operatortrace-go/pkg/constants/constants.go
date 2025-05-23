@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+// pkg/constants/constants.go
 
 package constants
 
@@ -8,5 +9,5 @@ const (
 	SpanIDAnnotation      = "operatortrace.azure.microsoft.com/span-id"
 	TraceIDTimeAnnotation = "operatortrace.azure.microsoft.com/trace-id-time"
 	ResourceVersionKey    = "resourceVersion"
-	TraceExpirationTime   = 10 // in minutes
+	TraceExpirationTime   = 20 // in minutes
 )

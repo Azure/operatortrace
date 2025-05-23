@@ -14,15 +14,32 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
+type IgnoreTraceAnnotationUpdatePredicate = TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]
+
 // IgnoreTraceAnnotationUpdatePredicate implements a predicate that ignores updates
 // where only the trace ID and span ID annotations, or resource version changes.
-type IgnoreTraceAnnotationUpdatePredicate struct {
+type TypedIgnoreTraceAnnotationUpdatePredicate[T client.Object] struct {
 	predicate.Funcs
 }
 
+// Create implements the create event check for the predicate.
+func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Create(e event.TypedCreateEvent[T]) bool {
+	return true
+}
+
+// Delete implements the delete event check for the predicate.
+func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Delete(e event.TypedDeleteEvent[T]) bool {
+	return true
+}
+
+// Generic implements the generic event check for the predicate.
+func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Generic(e event.TypedGenericEvent[T]) bool {
+	return true
+}
+
 // Update implements the update event check for the predicate.
-func (IgnoreTraceAnnotationUpdatePredicate) Update(e event.UpdateEvent) bool {
-	if e.ObjectOld == nil || e.ObjectNew == nil {
+func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEvent[T]) bool {
+	if e.ObjectOld.DeepCopyObject() == nil || e.ObjectNew.DeepCopyObject() == nil {
 		return true
 	}
 
@@ -55,7 +72,7 @@ func HasSignificantUpdate(oldObj, newObj runtime.Object) bool {
 		ObjectOld: oldObj.(client.Object),
 		ObjectNew: newObj.(client.Object),
 	}
-	predicate := IgnoreTraceAnnotationUpdatePredicate{}
+	predicate := TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
 	return predicate.Update(updateEvent)
 }
 

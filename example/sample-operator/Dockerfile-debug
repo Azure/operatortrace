@@ -1,0 +1,45 @@
+# --- Build with debug flags and prepare Delve ---
+FROM golang:1.24 AS builder
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /workspace
+
+# Copy Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
+
+# Copy the go source
+COPY cmd/main.go cmd/main.go
+COPY api/ api/
+COPY internal/ internal/
+
+RUN chown -R 65532:65532 ./cmd ./api ./internal
+
+# Download Delve (latest stable, see https://github.com/go-delve/delve/releases)
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Build your Go app with debugging enabled
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -gcflags "all=-N -l" -a -o manager cmd/main.go
+
+# --- Package into a minimal image and add Delve ---
+FROM gcr.io/distroless/base:debug-nonroot
+WORKDIR /
+
+# Copy binary and Delve from builder
+COPY --from=builder /workspace/manager .
+COPY --from=builder /go/bin/dlv /dlv
+
+COPY --from=builder /workspace/cmd/ ./cmd/
+COPY --from=builder /workspace/api/ ./api/
+COPY --from=builder /workspace/internal/ ./internal/
+
+# Expose Delve port
+EXPOSE 40000
+
+USER 65532:65532
+
+# Run Delve with your Go binary in headless mode
+ENTRYPOINT ["/dlv", "exec", "/manager", "--headless", "--listen=:40000", "--api-version=2", "--accept-multiclient", "--log"]
