@@ -14,8 +14,6 @@ import (
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 )
 
-type TracingRequest = tracingtypes.RequestWithTraceID
-
 // TracingQueue wraps a typed workqueue and a map to provide deduplication and value merging.
 type TracingQueue struct {
 	queue workqueue.TypedRateLimitingInterface[types.NamespacedName]
