@@ -129,10 +129,10 @@ func (tc *tracingClient) EmbedTraceIDInRequest(requestWithTraceID *tracingtypes.
 	objectKind := gvk.GroupKind().Kind
 	objectName := obj.GetName()
 
-	requestWithTraceID.TraceID = traceID
-	requestWithTraceID.SpanID = spanID
-	requestWithTraceID.SenderKind = objectKind
-	requestWithTraceID.SenderName = objectName
+	requestWithTraceID.Parent.TraceID = traceID
+	requestWithTraceID.Parent.SpanID = spanID
+	requestWithTraceID.Parent.Kind = objectKind
+	requestWithTraceID.Parent.Name = objectName
 
 	tc.Logger.Info("EmbedTraceIDInNamespacedName", "objectName", requestWithTraceID.Name)
 
@@ -156,8 +156,8 @@ func (tc *tracingClient) StartTrace(ctx context.Context, requestWithTraceID *tra
 		objectKind = gvk.GroupKind().Kind
 	}
 	name := requestWithTraceID.Name
-	callerName := requestWithTraceID.SenderName
-	callerKind := requestWithTraceID.SenderKind
+	callerName := requestWithTraceID.Parent.Name
+	callerKind := requestWithTraceID.Parent.Kind
 
 	operationName := ""
 

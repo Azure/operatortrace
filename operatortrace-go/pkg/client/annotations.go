@@ -43,7 +43,7 @@ func addTraceIDAnnotation(ctx context.Context, obj client.Object) {
 // overrideTraceIDFromNamespacedName overrides the traceID and spanID annotations using the value from the requestWithTraceID this is used to track
 // the traceID and spanID of the request that created or modified the object.
 func overrideTraceIDFromNamespacedName(requestWithTraceID tracingtypes.RequestWithTraceID, obj client.Object) error {
-	if lo.IsNil(requestWithTraceID.TraceID) || lo.IsNil(requestWithTraceID.SpanID) {
+	if lo.IsNil(requestWithTraceID.Parent.TraceID) || lo.IsNil(requestWithTraceID.Parent.SpanID) {
 		return nil
 	}
 
@@ -51,8 +51,8 @@ func overrideTraceIDFromNamespacedName(requestWithTraceID tracingtypes.RequestWi
 		obj.SetAnnotations(map[string]string{})
 	}
 	annotations := obj.GetAnnotations()
-	annotations[constants.TraceIDAnnotation] = requestWithTraceID.TraceID
-	annotations[constants.SpanIDAnnotation] = requestWithTraceID.SpanID
+	annotations[constants.TraceIDAnnotation] = requestWithTraceID.Parent.TraceID
+	annotations[constants.SpanIDAnnotation] = requestWithTraceID.Parent.SpanID
 	annotations[constants.TraceIDTimeAnnotation] = time.Now().Format(time.RFC3339)
 	obj.SetAnnotations(annotations)
 	return nil

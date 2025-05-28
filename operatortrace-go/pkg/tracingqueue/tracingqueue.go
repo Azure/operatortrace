@@ -39,8 +39,14 @@ func (tq *TracingQueue) Add(req tracingtypes.RequestWithTraceID) {
 	defer tq.mu.Unlock()
 
 	if _, found := tq.m[req.NamespacedName]; found {
-		// do nothing
-		// to do figure out how to make comprable linked spans
+		existing := tq.m[req.NamespacedName]
+		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
+			newLinkedSpan := tracingtypes.LinkedSpan{
+				TraceID: req.Parent.TraceID,
+				SpanID:  req.Parent.SpanID,
+			}
+			appendLinkedSpan(existing, newLinkedSpan)
+		}
 	} else {
 		tval := req // Copy, to avoid retaining the caller's pointer.
 		tq.m[req.NamespacedName] = &tval
@@ -127,15 +133,14 @@ func (tq *TracingQueue) ShuttingDown() bool {
 	return tq.queue.ShuttingDown()
 }
 
-// // Removes duplicate spans from the slice of linked spans.
-// func dedupeSpans(spans []tracingtypes.LinkedSpan) []tracingtypes.LinkedSpan {
-// 	seen := make(map[tracingtypes.LinkedSpan]struct{})
-// 	result := make([]tracingtypes.LinkedSpan, 0, len(spans))
-// 	for _, s := range spans {
-// 		if _, ok := seen[s]; !ok {
-// 			seen[s] = struct{}{}
-// 			result = append(result, s)
-// 		}
-// 	}
-// 	return result
-// }
+func appendLinkedSpan(req *tracingtypes.RequestWithTraceID, span tracingtypes.LinkedSpan) {
+	for i := 0; i < req.LinkedSpanCount; i++ {
+		if req.LinkedSpans[i] == span {
+			return // Already present, skip duplicate
+		}
+	}
+	if req.LinkedSpanCount < len(req.LinkedSpans) {
+		req.LinkedSpans[req.LinkedSpanCount] = span
+		req.LinkedSpanCount++
+	}
+}
