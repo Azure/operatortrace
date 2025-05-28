@@ -54,5 +54,10 @@ func (a *objectReconcilerAdapter[T]) Reconcile(ctx context.Context, req tracingt
 		return ctrlreconcile.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
-	return a.objReconciler.Reconcile(ctx, o)
+	result, err := a.objReconciler.Reconcile(ctx, o)
+
+	// errors from EndTrace are recorded in the span
+	a.client.EndTrace(ctx, o)
+
+	return result, err
 }
