@@ -93,8 +93,8 @@ func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient oper
 		source.TypedKind(
 			mgr.GetCache(),
 			&appv1.Sample{},
-			&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample, tracingtypes.RequestWithTraceID]{},
-			tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
+			&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample]{},
+			tracingpredicates.TypedIgnoreTraceAnnotationUpdatePredicate[*appv1.Sample]{},
 			predicate.TypedResourceVersionChangedPredicate[*appv1.Sample]{},
 		),
 	)
