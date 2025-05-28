@@ -20,12 +20,11 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
 
@@ -33,7 +32,6 @@ import (
 	tracinghandler "github.com/Azure/operatortrace/operatortrace-go/pkg/handler"
 	tracingpredicates "github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
 	tracingreconcile "github.com/Azure/operatortrace/operatortrace-go/pkg/reconcile"
-	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracingqueue"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 )
 
@@ -75,31 +73,17 @@ func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient operatortrace.TracingClient) error {
-	myQueueFactory := func(name string, rl workqueue.TypedRateLimiter[tracingtypes.RequestWithTraceID]) workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID] {
-		return tracingqueue.NewTracingQueue()
-	}
-	opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
-		NewQueue: myQueueFactory,
-		Reconciler: tracingreconcile.AsTracingReconciler(
-			tracingClient,
-			r,
-		),
-	}
-	c, err := controller.NewTyped("sample", mgr, opt)
-	if err != nil {
-		return err
-	}
-	err = c.Watch(
-		source.TypedKind(
-			mgr.GetCache(),
+
+	return builder.TypedControllerManagedBy[tracingtypes.RequestWithTraceID](mgr).
+		Named("sample").
+		WithOptions(tracingreconcile.TracingOptions()).
+		Watches(
 			&appv1.Sample{},
-			&tracinghandler.TypedEnqueueRequestForObject[*appv1.Sample]{},
-			tracingpredicates.TypedIgnoreTraceAnnotationUpdatePredicate[*appv1.Sample]{},
-			predicate.TypedResourceVersionChangedPredicate[*appv1.Sample]{},
-		),
-	)
-	if err != nil {
-		return err
-	}
-	return nil
+			&tracinghandler.TypedEnqueueRequestForObject[client.Object]{},
+			builder.WithPredicates(
+				tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
+				predicate.ResourceVersionChangedPredicate{},
+			),
+		).
+		Complete(tracingreconcile.AsTracingReconciler(tracingClient, r))
 }
