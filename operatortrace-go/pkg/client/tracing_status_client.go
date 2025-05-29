@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
+	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,7 +45,7 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusUpdate %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusUpdate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	existingObj := obj.DeepCopyObject().(client.Object)
@@ -76,7 +77,7 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusPatch %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusPatch %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	existingObj := obj.DeepCopyObject().(client.Object)
@@ -109,7 +110,7 @@ func (ts *tracingStatusClient) Create(ctx context.Context, obj client.Object, su
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusCreate %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusCreate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	setConditionMessage("TraceID", span.SpanContext().TraceID().String(), obj, ts.scheme)

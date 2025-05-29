@@ -64,7 +64,7 @@ func (tc *tracingClient) Create(ctx context.Context, obj client.Object, opts ...
 	}
 
 	kind := gvk.GroupKind().Kind
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Create %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Create %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	addTraceIDAnnotation(ctx, obj)
@@ -86,7 +86,7 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Update %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Update %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	existingObj := obj.DeepCopyObject().(client.Object)
@@ -111,7 +111,7 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 }
 
 func (tc *tracingClient) StartSpan(ctx context.Context, operationName string) (context.Context, trace.Span) {
-	return startSpanFromContext(ctx, tc.Logger, tc.Tracer, nil, tc.scheme, operationName)
+	return startSpanFromContext(ctx, tc.Logger, tc.Tracer, nil, tc.scheme, operationName, [10]tracingtypes.LinkedSpan{})
 }
 
 // EmbedTraceIDInNamespacedName embeds the traceID and spanID in the key.Name
@@ -145,7 +145,7 @@ func (tc *tracingClient) StartTrace(ctx context.Context, requestWithTraceID *tra
 	// Create or retrieve the span from the context
 	getErr := tc.Reader.Get(ctx, requestWithTraceID.NamespacedName, obj, opts...)
 	if getErr != nil {
-		ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("StartTrace Unknown Object %s", requestWithTraceID.NamespacedName))
+		ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("StartTrace Unknown Object %s", requestWithTraceID.NamespacedName), requestWithTraceID.LinkedSpans)
 		return trace.ContextWithSpan(ctx, span), span, getErr
 	}
 	overrideTraceIDFromNamespacedName(*requestWithTraceID, obj)
@@ -167,7 +167,7 @@ func (tc *tracingClient) StartTrace(ctx context.Context, requestWithTraceID *tra
 		operationName = fmt.Sprintf("StartTrace %s %s", objectKind, name)
 	}
 
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, operationName)
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, operationName, requestWithTraceID.LinkedSpans)
 
 	if err != nil {
 		span.RecordError(err)
@@ -179,7 +179,7 @@ func (tc *tracingClient) StartTrace(ctx context.Context, requestWithTraceID *tra
 
 // Ends the trace by clearing the traceid from the object
 func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) (client.Object, error) {
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("EndTrace %s %s", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("EndTrace %s %s", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	annotations := obj.GetAnnotations()
@@ -245,7 +245,7 @@ func (tc *tracingClient) Get(ctx context.Context, key client.ObjectKey, obj clie
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Get %s %s", kind, key.Name))
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Get %s %s", kind, key.Name), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	tc.Logger.Info("Getting object", "object", key.Name)
@@ -282,7 +282,7 @@ func (tc *tracingClient) Patch(ctx context.Context, obj client.Object, patch cli
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Patch %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Patch %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	existingObj := obj.DeepCopyObject().(client.Object)
@@ -314,7 +314,7 @@ func (tc *tracingClient) Delete(ctx context.Context, obj client.Object, opts ...
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Delete %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("Delete %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	tc.Logger.Info("Deleting object", "object", obj.GetName())
@@ -333,7 +333,7 @@ func (tc *tracingClient) DeleteAllOf(ctx context.Context, obj client.Object, opt
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("DeleteAllOf %s %s", kind, obj.GetName()))
+	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("DeleteAllOf %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	tc.Logger.Info("Deleting all of object", "object", obj.GetName())

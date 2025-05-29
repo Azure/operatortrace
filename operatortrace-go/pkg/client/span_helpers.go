@@ -10,6 +10,7 @@ import (
 	"time"
 
 	constants "github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel/trace"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,8 +18,38 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// sliceFromLinkedSpans converts a slice of LinkedSpan to a slice of trace.SpanContext
+func sliceFromLinkedSpans(linkedSpans [10]types.LinkedSpan) []trace.Link {
+	spanContexts := make([]trace.SpanContext, 0, len(linkedSpans))
+	for _, linkedSpan := range linkedSpans {
+		if linkedSpan.TraceID != "" && linkedSpan.SpanID != "" {
+			traceID, err := trace.TraceIDFromHex(linkedSpan.TraceID)
+			if err != nil {
+				continue
+			}
+			spanID, err := trace.SpanIDFromHex(linkedSpan.SpanID)
+			if err != nil {
+				continue
+			}
+			spanContexts = append(spanContexts, trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: traceID,
+				SpanID:  spanID,
+				Remote:  true,
+			}))
+		}
+	}
+	links := make([]trace.Link, 0, len(spanContexts))
+	for _, spanContext := range spanContexts {
+		links = append(links, trace.Link{
+			SpanContext: spanContext,
+			Attributes:  nil, // No attributes are set for linked spans
+		})
+	}
+	return links
+}
+
 // startSpanFromContext starts a new span from the context and attaches trace information to the object
-func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.Object, scheme *runtime.Scheme, operationName string) (context.Context, trace.Span) {
+func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.Object, scheme *runtime.Scheme, operationName string, linkedSpansArray [10]types.LinkedSpan) (context.Context, trace.Span) {
 	span := trace.SpanFromContext(ctx)
 	if span.SpanContext().IsValid() {
 		ctx, span = tracer.Start(ctx, operationName)
@@ -98,9 +129,11 @@ func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.
 			}
 		}
 	}
+	// check for linked spans
+	linkedSpans := sliceFromLinkedSpans(linkedSpansArray)
 
 	// Create a new span
-	ctx, span = tracer.Start(ctx, operationName)
+	ctx, span = tracer.Start(ctx, operationName, trace.WithLinks(linkedSpans...))
 	return ctx, span
 }
 
