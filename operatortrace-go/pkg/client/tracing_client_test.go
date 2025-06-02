@@ -102,9 +102,9 @@ func TestEmbedTraceIDInRequest(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Assert the object has been updated correctly
-	assert.Equal(t, "1234", request.TraceID)
-	assert.Equal(t, "5678", request.SpanID)
-	assert.Equal(t, "test-pod", request.SenderName)
+	assert.Equal(t, "1234", request.Parent.TraceID)
+	assert.Equal(t, "5678", request.Parent.SpanID)
+	assert.Equal(t, "test-pod", request.Parent.Name)
 }
 
 func TestAutomaticAnnotationManagement(t *testing.T) {
@@ -177,10 +177,10 @@ func TestPassingTraceIdInNamespacedName(t *testing.T) {
 
 	// key := client.ObjectKey{Name: "f620f5cad0af940c294f980c5366a6a1;45f359cdc1c8ab06;Configmap;configmap-10;pre-test-pod", Namespace: "default"}
 	request := ClientObjectToRequestWithTraceID(&client.ObjectKey{Name: "pre-test-pod", Namespace: "default"})
-	request.TraceID = "f620f5cad0af940c294f980c5366a6a1"
-	request.SpanID = "45f359cdc1c8ab06"
-	request.SenderKind = "Configmap"
-	request.SenderName = "configmap-10"
+	request.Parent.TraceID = "f620f5cad0af940c294f980c5366a6a1"
+	request.Parent.SpanID = "45f359cdc1c8ab06"
+	request.Parent.Kind = "Configmap"
+	request.Parent.Name = "configmap-10"
 
 	// Create a spanId since no GET is being called to initialize the span
 	_, span, err := tracingClient.StartTrace(ctx, &request, &corev1.Pod{})

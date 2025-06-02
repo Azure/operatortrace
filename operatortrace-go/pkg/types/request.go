@@ -11,9 +11,20 @@ import (
 // RequestWithTraceID is the normal reconcile request object with tracing information added to it.
 type RequestWithTraceID struct {
 	ctrlreconcile.Request
-	TraceID    string
-	SpanID     string
-	SenderName string
-	SenderKind string
-	EventKind  string
+	Parent          RequestParent
+	LinkedSpans     [10]LinkedSpan
+	LinkedSpanCount int
+}
+
+type RequestParent struct {
+	TraceID   string
+	SpanID    string
+	Name      string
+	Kind      string
+	EventKind string
+}
+
+type LinkedSpan struct {
+	TraceID string
+	SpanID  string
 }

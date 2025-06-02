@@ -229,13 +229,13 @@ func (e *enqueueRequestForOwner[object]) getOwnerReconcileRequest(obj metav1.Obj
 			senderKind := kind
 
 			if traceId != "" && spanId != "" {
-				request.TraceID = traceId
-				request.SpanID = spanId
+				request.Parent.TraceID = traceId
+				request.Parent.SpanID = spanId
 			}
 
-			request.EventKind = eventKind
-			request.SenderName = senderName
-			request.SenderKind = senderKind
+			request.Parent.EventKind = eventKind
+			request.Parent.Name = senderName
+			request.Parent.Kind = senderKind
 
 			result[request] = empty{}
 		}

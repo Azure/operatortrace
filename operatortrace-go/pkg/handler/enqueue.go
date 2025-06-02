@@ -116,9 +116,11 @@ func objectToRequestWithTraceID(obj client.Object) tracingtypes.RequestWithTrace
 				Namespace: obj.GetNamespace(),
 			},
 		},
-		TraceID:    traceId,
-		SpanID:     spanId,
-		SenderName: senderName,
-		SenderKind: senderKind,
+		Parent: tracingtypes.RequestParent{
+			TraceID: traceId,
+			SpanID:  spanId,
+			Name:    senderName,
+			Kind:    senderKind,
+		},
 	}
 }

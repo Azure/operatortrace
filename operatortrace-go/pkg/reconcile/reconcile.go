@@ -9,12 +9,25 @@ import (
 	"reflect"
 
 	tracingclient "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracingqueue"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type Reconciler = ctrlreconcile.TypedReconciler[tracingtypes.RequestWithTraceID]
+
+func TracingOptions() controller.TypedOptions[tracingtypes.RequestWithTraceID] {
+	myQueueFactory := func(name string, rl workqueue.TypedRateLimiter[tracingtypes.RequestWithTraceID]) workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID] {
+		return tracingqueue.NewTracingQueue()
+	}
+	opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
+		NewQueue: myQueueFactory,
+	}
+	return opt
+}
 
 // AsReconciler creates a Reconciler based on the given ObjectReconciler.
 func AsTracingReconciler[T ctrlclient.Object](client tracingclient.TracingClient, rec ctrlreconcile.ObjectReconciler[T]) ctrlreconcile.TypedReconciler[tracingtypes.RequestWithTraceID] {
@@ -41,5 +54,10 @@ func (a *objectReconcilerAdapter[T]) Reconcile(ctx context.Context, req tracingt
 		return ctrlreconcile.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
-	return a.objReconciler.Reconcile(ctx, o)
+	result, err := a.objReconciler.Reconcile(ctx, o)
+
+	// errors from EndTrace are recorded in the span
+	a.client.EndTrace(ctx, o)
+
+	return result, err
 }
