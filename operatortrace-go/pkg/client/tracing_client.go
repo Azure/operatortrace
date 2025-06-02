@@ -206,6 +206,13 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 		span.RecordError(err)
 	}
 
+	// compare the traceid and spanid from currentobj to ensure that the traceid and spanid are not changed
+	if currentObjFromServer.GetAnnotations()[constants.TraceIDAnnotation] != obj.GetAnnotations()[constants.TraceIDAnnotation] {
+		tc.Logger.Info("TraceID has changed, skipping patch", "object", obj.GetName())
+		span.RecordError(fmt.Errorf("TraceID has changed, skipping patch: object %s", obj.GetName()))
+		return obj, nil
+	}
+
 	// Remove the traceid and spanid annotations and create a patch
 	original := obj.DeepCopyObject().(client.Object)
 	patch := client.MergeFrom(original)
