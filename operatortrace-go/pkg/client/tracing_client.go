@@ -102,6 +102,17 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 	addTraceIDAnnotation(ctx, obj)
 	tc.Logger.Info("Updating object", "object", obj.GetName())
 
+	// if resource version has changed, and there are no significant updates, we should do a patch instead of an update. This means probably just the traceID has changed / been removed.
+	if existingObj.GetResourceVersion() != obj.GetResourceVersion() {
+		tc.Logger.Info("Resource version has changed, using Patch instead of Update", "object", obj.GetName())
+		err = tc.Patch(ctx, obj, client.MergeFrom(existingObj))
+		if err != nil {
+			span.RecordError(err)
+		}
+		return err
+	}
+
+	// If the resource version has not changed, we can do a full update
 	err = tc.Client.Update(ctx, obj, opts...)
 	if err != nil {
 		span.RecordError(err)
