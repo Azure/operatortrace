@@ -17,6 +17,7 @@ func TestAppendLinkedSpan(t *testing.T) {
 	span1 := tracingtypes.LinkedSpan{TraceID: "1", SpanID: "a"}
 	span2 := tracingtypes.LinkedSpan{TraceID: "2", SpanID: "b"}
 	span3 := tracingtypes.LinkedSpan{TraceID: "3", SpanID: "c"}
+	spanEmpty := tracingtypes.LinkedSpan{}
 
 	// Start: add two spans
 	appendLinkedSpan(req, span1)
@@ -33,6 +34,11 @@ func TestAppendLinkedSpan(t *testing.T) {
 
 	// Try to add a duplicate
 	appendLinkedSpan(req, span1)
+	require.Equal(t, 3, req.LinkedSpanCount)
+	require.ElementsMatch(t, []tracingtypes.LinkedSpan{span1, span2, span3}, req.LinkedSpans[:req.LinkedSpanCount])
+
+	// Try to add an empty linked span
+	appendLinkedSpan(req, spanEmpty)
 	require.Equal(t, 3, req.LinkedSpanCount)
 	require.ElementsMatch(t, []tracingtypes.LinkedSpan{span1, span2, span3}, req.LinkedSpans[:req.LinkedSpanCount])
 }
