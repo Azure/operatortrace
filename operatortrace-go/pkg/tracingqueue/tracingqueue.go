@@ -134,6 +134,11 @@ func (tq *TracingQueue) ShuttingDown() bool {
 }
 
 func appendLinkedSpan(req *tracingtypes.RequestWithTraceID, span tracingtypes.LinkedSpan) {
+	// Don't add empty linked spans
+	if len(span.TraceID) == 0 && len(span.SpanID) == 0 {
+		return
+	}
+
 	for i := 0; i < req.LinkedSpanCount; i++ {
 		if req.LinkedSpans[i] == span {
 			return // Already present, skip duplicate
