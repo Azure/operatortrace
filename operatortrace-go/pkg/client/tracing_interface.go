@@ -18,7 +18,7 @@ type TracingClient interface {
 	trace.Tracer
 
 	StartTrace(ctx context.Context, requestWithTraceID *tracingtypes.RequestWithTraceID, obj client.Object, opts ...client.GetOption) (context.Context, trace.Span, error)
-	EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) (client.Object, error)
+	EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) error
 	StartSpan(ctx context.Context, operationName string) (context.Context, trace.Span)
 	EmbedTraceIDInRequest(requestWithTraceID *tracingtypes.RequestWithTraceID, obj client.Object) error
 }
