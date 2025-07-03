@@ -111,7 +111,13 @@ func (tq *TracingQueue) Get() (req tracingtypes.RequestWithTraceID, shutdown boo
 	}
 
 	tq.mu.Lock()
-	val := *tq.m[key]
+	valPtr, found := tq.m[key]
+	if !found || valPtr == nil {
+		tq.mu.Unlock()
+		// Key not found in map, return zero value
+		return tracingtypes.RequestWithTraceID{}, false
+	}
+	val := *valPtr
 	delete(tq.m, key)
 	tq.mu.Unlock()
 
