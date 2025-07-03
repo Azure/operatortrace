@@ -59,20 +59,17 @@ func (tq *TracingQueue) AddAfter(req tracingtypes.RequestWithTraceID, duration t
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
-	if _, found := tq.m[req.NamespacedName]; found {
-		existing := tq.m[req.NamespacedName]
-		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
-			newLinkedSpan := tracingtypes.LinkedSpan{
-				TraceID: req.Parent.TraceID,
-				SpanID:  req.Parent.SpanID,
-			}
-			appendLinkedSpan(existing, newLinkedSpan)
-		}
-	} else {
+	if _, found := tq.m[req.NamespacedName]; !found {
+		// Don't link to any previous span
 		tval := req
+		req.LinkedSpanCount = 0
+		req.LinkedSpans = [10]tracingtypes.LinkedSpan{} // Reset linked spans
+		req.Parent = tracingtypes.RequestParent{}
 		tq.m[req.NamespacedName] = &tval
 		tq.queue.AddAfter(req.NamespacedName, duration)
 	}
+
+	// If the request already exists, we do not update it here.
 }
 
 // AddRateLimited adds or merges a tracing request into the queue, deduping by key, with rate limiting.
@@ -80,6 +77,7 @@ func (tq *TracingQueue) AddRateLimited(req tracingtypes.RequestWithTraceID) {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
+	// This is usually called after an error so keeping it linked to the previous span.
 	if _, found := tq.m[req.NamespacedName]; found {
 		existing := tq.m[req.NamespacedName]
 		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
