@@ -114,11 +114,10 @@ func (tq *TracingQueue) Get() (req tracingtypes.RequestWithTraceID, shutdown boo
 	valPtr, found := tq.m[key]
 	if !found || valPtr == nil {
 		tq.mu.Unlock()
-		// Key not found in map, return zero value
+		// Key not found in map, return zero value and log a warning if needed
 		return tracingtypes.RequestWithTraceID{}, false
 	}
 	val := *valPtr
-	delete(tq.m, key)
 	tq.mu.Unlock()
 
 	return val, false
@@ -127,6 +126,9 @@ func (tq *TracingQueue) Get() (req tracingtypes.RequestWithTraceID, shutdown boo
 // Done notifies the underlying queue that you're done with this key (for rate limiting).
 func (tq *TracingQueue) Done(req tracingtypes.RequestWithTraceID) {
 	tq.queue.Done(req.NamespacedName)
+	tq.mu.Lock()
+	delete(tq.m, req.NamespacedName)
+	tq.mu.Unlock()
 }
 
 // ShutDown stops accepting new work and shuts down the queue.
