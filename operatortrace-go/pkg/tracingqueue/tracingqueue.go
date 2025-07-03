@@ -56,14 +56,44 @@ func (tq *TracingQueue) Add(req tracingtypes.RequestWithTraceID) {
 
 // AddAfter adds or merges a tracing request into the queue, deduping by key, with a delay.
 func (tq *TracingQueue) AddAfter(req tracingtypes.RequestWithTraceID, duration time.Duration) {
-	// Add the request to the queue with a delay.
-	tq.Add(req)
+	tq.mu.Lock()
+	defer tq.mu.Unlock()
+
+	if _, found := tq.m[req.NamespacedName]; found {
+		existing := tq.m[req.NamespacedName]
+		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
+			newLinkedSpan := tracingtypes.LinkedSpan{
+				TraceID: req.Parent.TraceID,
+				SpanID:  req.Parent.SpanID,
+			}
+			appendLinkedSpan(existing, newLinkedSpan)
+		}
+	} else {
+		tval := req
+		tq.m[req.NamespacedName] = &tval
+		tq.queue.AddAfter(req.NamespacedName, duration)
+	}
 }
 
 // AddRateLimited adds or merges a tracing request into the queue, deduping by key, with rate limiting.
 func (tq *TracingQueue) AddRateLimited(req tracingtypes.RequestWithTraceID) {
-	// Add the request to the queue with rate limiting.
-	tq.Add(req)
+	tq.mu.Lock()
+	defer tq.mu.Unlock()
+
+	if _, found := tq.m[req.NamespacedName]; found {
+		existing := tq.m[req.NamespacedName]
+		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
+			newLinkedSpan := tracingtypes.LinkedSpan{
+				TraceID: req.Parent.TraceID,
+				SpanID:  req.Parent.SpanID,
+			}
+			appendLinkedSpan(existing, newLinkedSpan)
+		}
+	} else {
+		tval := req
+		tq.m[req.NamespacedName] = &tval
+		tq.queue.AddRateLimited(req.NamespacedName)
+	}
 }
 
 // Forget removes a tracing request from the queue, if it exists.
@@ -111,13 +141,7 @@ func (tq *TracingQueue) Get() (req tracingtypes.RequestWithTraceID, shutdown boo
 	}
 
 	tq.mu.Lock()
-	valPtr, found := tq.m[key]
-	if !found || valPtr == nil {
-		tq.mu.Unlock()
-		// Key not found in map, return zero value and log a warning if needed
-		return tracingtypes.RequestWithTraceID{}, false
-	}
-	val := *valPtr
+	val := *tq.m[key]
 	tq.mu.Unlock()
 
 	return val, false
