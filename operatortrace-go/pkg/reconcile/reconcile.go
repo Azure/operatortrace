@@ -39,8 +39,9 @@ func AsTracingReconciler[T ctrlclient.Object](client tracingclient.TracingClient
 
 // objectReconcilerAdapter is the object for creating a reconcile request as a converted object.
 type objectReconcilerAdapter[T ctrlclient.Object] struct {
-	objReconciler ctrlreconcile.ObjectReconciler[T]
-	client        tracingclient.TracingClient
+	objReconciler   ctrlreconcile.ObjectReconciler[T]
+	client          tracingclient.TracingClient
+	disableEndTrace bool // If true, the EndTrace call is NOT made at the end of Reconcile. (default is false - EndTrace is called)
 }
 
 // Reconcile implements Reconciler.
@@ -61,8 +62,10 @@ func (a *objectReconcilerAdapter[T]) Reconcile(ctx context.Context, req tracingt
 		span.RecordError(err)
 	}
 
-	// errors from EndTrace are recorded in the span
-	a.client.EndTrace(ctx, o)
+	if a.disableEndTrace {
+		// errors from EndTrace are recorded in the span
+		a.client.EndTrace(ctx, o)
+	}
 
 	return result, err
 }
