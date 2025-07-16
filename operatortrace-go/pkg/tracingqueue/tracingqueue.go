@@ -12,13 +12,15 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
+	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // TracingQueue wraps a typed workqueue and a map to provide deduplication and value merging.
 type TracingQueue struct {
-	queue workqueue.TypedRateLimitingInterface[types.NamespacedName]
-	mu    sync.Mutex
-	m     map[types.NamespacedName]*tracingtypes.RequestWithTraceID
+	queue       workqueue.TypedRateLimitingInterface[types.NamespacedName]
+	mu          sync.Mutex
+	m           map[types.NamespacedName]*tracingtypes.RequestWithTraceID
+	softDeleted map[types.NamespacedName]*tracingtypes.RequestWithTraceID
 }
 
 // NewTracingQueue creates a new TracingQueue instance using generics and the recommended rate limiter.
@@ -27,7 +29,8 @@ func NewTracingQueue() *TracingQueue {
 		queue: workqueue.NewTypedRateLimitingQueue(
 			workqueue.DefaultTypedControllerRateLimiter[types.NamespacedName](),
 		),
-		m: make(map[types.NamespacedName]*tracingtypes.RequestWithTraceID),
+		m:           make(map[types.NamespacedName]*tracingtypes.RequestWithTraceID),
+		softDeleted: make(map[types.NamespacedName]*tracingtypes.RequestWithTraceID),
 	}
 }
 
@@ -124,9 +127,12 @@ func (tq *TracingQueue) ShutDownWithDrain() {
 	tq.queue.ShutDownWithDrain()
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
-	// Clear the map when shutting down.
+	// Clear the maps when shutting down.
 	for key := range tq.m {
 		delete(tq.m, key)
+	}
+	for key := range tq.softDeleted {
+		delete(tq.softDeleted, key)
 	}
 }
 
@@ -139,18 +145,33 @@ func (tq *TracingQueue) Get() (req tracingtypes.RequestWithTraceID, shutdown boo
 	}
 
 	tq.mu.Lock()
-	val := *tq.m[key]
-	tq.mu.Unlock()
-
-	return val, false
+	defer tq.mu.Unlock()
+	valPtr, found := tq.m[key]
+	if found && valPtr != nil {
+		return *valPtr, false
+	}
+	// Check softDeleted map
+	softPtr, softFound := tq.softDeleted[key]
+	if softFound && softPtr != nil {
+		return *softPtr, false
+	}
+	// Key not found in either map
+	return tracingtypes.RequestWithTraceID{
+		Request: ctrlreconcile.Request{
+			NamespacedName: key,
+		},
+	}, false
 }
 
 // Done notifies the underlying queue that you're done with this key (for rate limiting).
 func (tq *TracingQueue) Done(req tracingtypes.RequestWithTraceID) {
-	tq.queue.Done(req.NamespacedName)
 	tq.mu.Lock()
-	delete(tq.m, req.NamespacedName)
-	tq.mu.Unlock()
+	defer tq.mu.Unlock()
+	tq.queue.Done(req.NamespacedName)
+	if val, found := tq.m[req.NamespacedName]; found {
+		tq.softDeleted[req.NamespacedName] = val
+		delete(tq.m, req.NamespacedName)
+	}
 }
 
 // ShutDown stops accepting new work and shuts down the queue.
