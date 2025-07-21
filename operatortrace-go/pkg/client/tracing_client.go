@@ -189,13 +189,13 @@ func (tc *tracingClient) StartTrace(ctx context.Context, requestWithTraceID *tra
 }
 
 // Ends the trace by clearing the traceid from the object
-func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) (client.Object, error) {
+func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) error {
 	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, fmt.Sprintf("EndTrace %s %s", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
-		return obj, nil
+		return nil
 	}
 
 	// get the current object and ensure that current object has the expected traceid and spanid annotations
@@ -210,7 +210,7 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 	if currentObjFromServer.GetAnnotations()[constants.TraceIDAnnotation] != obj.GetAnnotations()[constants.TraceIDAnnotation] {
 		tc.Logger.Info("TraceID has changed, skipping patch", "object", obj.GetName())
 		span.RecordError(fmt.Errorf("TraceID has changed, skipping patch: object %s", obj.GetName()))
-		return obj, nil
+		return nil
 	}
 
 	// Remove the traceid and spanid annotations and create a patch
@@ -219,6 +219,7 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 
 	delete(annotations, constants.TraceIDAnnotation)
 	delete(annotations, constants.SpanIDAnnotation)
+	delete(annotations, constants.TraceIDTimeAnnotation)
 	obj.SetAnnotations(annotations)
 
 	tc.Logger.Info("Patching object", "object", obj.GetName())
@@ -243,7 +244,7 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 		span.RecordError(err)
 	}
 
-	return obj, err
+	return err
 }
 
 // Get adds tracing around the original client's Get method
@@ -273,7 +274,7 @@ func (tc *tracingClient) Get(ctx context.Context, key client.ObjectKey, obj clie
 func (tc *tracingClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	gvk, _ := apiutil.GVKForObject(list, tc.scheme)
 	kind := gvk.GroupKind().Kind
-	ctx, span := startSpanFromContextList(ctx, tc.Logger, tc.Tracer, list, kind)
+	ctx, span := startSpanFromContextGeneric(ctx, tc.Logger, tc.Tracer, kind)
 	defer span.End()
 
 	tc.Logger.Info("Getting List", "object", kind)

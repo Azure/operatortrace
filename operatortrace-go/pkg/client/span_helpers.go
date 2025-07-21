@@ -137,12 +137,14 @@ func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.
 	return ctx, span
 }
 
-func startSpanFromContextList(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.ObjectList, operationName string) (context.Context, trace.Span) {
+func startSpanFromContextGeneric(ctx context.Context, logger logr.Logger, tracer trace.Tracer, operationName string) (context.Context, trace.Span) {
 	span := trace.SpanFromContext(ctx)
 	if span.SpanContext().IsValid() {
 		spanContext := trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID: span.SpanContext().TraceID(),
-			SpanID:  span.SpanContext().SpanID(),
+			TraceID:    span.SpanContext().TraceID(),
+			SpanID:     span.SpanContext().SpanID(),
+			TraceFlags: trace.FlagsSampled,
+			Remote:     false,
 		})
 		ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
 		ctx, span = tracer.Start(ctx, operationName)

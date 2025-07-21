@@ -598,7 +598,7 @@ func TestEndTrace(t *testing.T) {
 	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
 
 	// Test EndTrace
-	_, err = tracingClient.EndTrace(ctx, retrievedPod)
+	err = tracingClient.EndTrace(ctx, retrievedPod)
 	assert.NoError(t, err)
 	finalPod := &corev1.Pod{}
 	// Get the pod with default kubernetes client to ensure that there is no traceID and spanID
@@ -677,7 +677,7 @@ func TestEndTraceChangedAnnotation(t *testing.T) {
 	tracingClientNew.Update(ctxNew, retrievedPodClone)
 
 	// Test EndTrace and ensure that it did not remove the traceID since it was updated by a different client
-	_, err = tracingClient.EndTrace(ctx, retrievedPod)
+	err = tracingClient.EndTrace(ctx, retrievedPod)
 	assert.NoError(t, err)
 	finalPod := &corev1.Pod{}
 	// Get the pod with default kubernetes client to ensure that there is no traceID and spanID
