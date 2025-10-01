@@ -18,7 +18,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -749,6 +748,7 @@ func TestDeleteWithTracing(t *testing.T) {
 	defer span.End()
 	assert.NoError(t, err)
 	traceID := span.SpanContext().TraceID().String()
+	assert.NotEmpty(t, traceID)
 
 	// Retrieve the Pod and check the annotation
 	err = tracingClient.Delete(ctx, pod)
@@ -784,6 +784,7 @@ func TestDeleteAllOfWithTracing(t *testing.T) {
 	defer span.End()
 	assert.NoError(t, err)
 	traceID := span.SpanContext().TraceID().String()
+	assert.NotEmpty(t, traceID)
 
 	// Retrieve the Pod and check the annotation
 	retrievedPod := &corev1.Pod{}
@@ -822,7 +823,7 @@ func TestGetConditions(t *testing.T) {
 	// Assert no error occurred
 	assert.NoError(t, err)
 
-	assert.Equal(t, conditions[0]["Type"], v1.PodConditionType("PodScheduled"))
+	assert.Equal(t, conditions[0]["Type"], corev1.PodConditionType("PodScheduled"))
 }
 
 func TestGetConditionMessage(t *testing.T) {
