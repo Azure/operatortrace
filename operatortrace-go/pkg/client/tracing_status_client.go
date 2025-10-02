@@ -45,8 +45,9 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusUpdate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
-	defer span.End()
+	// Prepare span (internal) for diff check
+	ctx, spanPrepare := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("Prepare StatusUpdate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
+	defer spanPrepare.End()
 
 	existingObj := obj.DeepCopyObject().(client.Object)
 	if err := ts.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
@@ -58,13 +59,18 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 		return nil
 	}
 
-	setConditionMessage("TraceID", span.SpanContext().TraceID().String(), obj, ts.scheme)
-	setConditionMessage("SpanID", span.SpanContext().SpanID().String(), obj, ts.scheme)
+	// Producer span for the actual status update
+	updateSpanOpts := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindProducer)}
+	ctx, spanUpdate := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusUpdate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{}, updateSpanOpts...)
+	defer spanUpdate.End()
+
+	setConditionMessage("TraceID", spanUpdate.SpanContext().TraceID().String(), obj, ts.scheme)
+	setConditionMessage("SpanID", spanUpdate.SpanContext().SpanID().String(), obj, ts.scheme)
 
 	ts.Logger.Info("updating status object", "object", obj.GetName())
 	err = ts.StatusWriter.Update(ctx, obj, opts...)
 	if err != nil {
-		span.RecordError(err)
+		spanUpdate.RecordError(err)
 	}
 	return err
 }
@@ -77,8 +83,9 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusPatch %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
-	defer span.End()
+	// Prepare span (internal) for diff check
+	ctx, spanPrepare := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("Prepare StatusPatch %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
+	defer spanPrepare.End()
 
 	existingObj := obj.DeepCopyObject().(client.Object)
 	if err := ts.Client.Get(ctx, client.ObjectKeyFromObject(obj), existingObj); err != nil {
@@ -90,13 +97,18 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 		return nil
 	}
 
-	setConditionMessage("TraceID", span.SpanContext().TraceID().String(), obj, ts.scheme)
-	setConditionMessage("SpanID", span.SpanContext().SpanID().String(), obj, ts.scheme)
+	// Producer span for actual status patch
+	patchSpanOpts := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindProducer)}
+	ctx, spanPatch := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusPatch %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{}, patchSpanOpts...)
+	defer spanPatch.End()
+
+	setConditionMessage("TraceID", spanPatch.SpanContext().TraceID().String(), obj, ts.scheme)
+	setConditionMessage("SpanID", spanPatch.SpanContext().SpanID().String(), obj, ts.scheme)
 
 	ts.Logger.Info("patching status object", "object", obj.GetName())
 	err = ts.StatusWriter.Patch(ctx, obj, patch, opts...)
 	if err != nil {
-		span.RecordError(err)
+		spanPatch.RecordError(err)
 	}
 
 	return err
@@ -110,16 +122,18 @@ func (ts *tracingStatusClient) Create(ctx context.Context, obj client.Object, su
 
 	kind := gvk.GroupKind().Kind
 
-	ctx, span := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusCreate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
-	defer span.End()
+	// Single producer span (no diff check required for create)
+	createSpanOpts := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindProducer)}
+	ctx, spanCreate := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, fmt.Sprintf("StatusCreate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{}, createSpanOpts...)
+	defer spanCreate.End()
 
-	setConditionMessage("TraceID", span.SpanContext().TraceID().String(), obj, ts.scheme)
-	setConditionMessage("SpanID", span.SpanContext().SpanID().String(), obj, ts.scheme)
+	setConditionMessage("TraceID", spanCreate.SpanContext().TraceID().String(), obj, ts.scheme)
+	setConditionMessage("SpanID", spanCreate.SpanContext().SpanID().String(), obj, ts.scheme)
 
 	ts.Logger.Info("creating status object", "object", obj.GetName())
 	err = ts.StatusWriter.Create(ctx, obj, subResource, opts...)
 	if err != nil {
-		span.RecordError(err)
+		spanCreate.RecordError(err)
 	}
 	return err
 }

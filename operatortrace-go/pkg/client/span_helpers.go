@@ -49,10 +49,10 @@ func sliceFromLinkedSpans(linkedSpans [10]types.LinkedSpan) []trace.Link {
 }
 
 // startSpanFromContext starts a new span from the context and attaches trace information to the object
-func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.Object, scheme *runtime.Scheme, operationName string, linkedSpansArray [10]types.LinkedSpan) (context.Context, trace.Span) {
+func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.Object, scheme *runtime.Scheme, operationName string, linkedSpansArray [10]types.LinkedSpan, spanOpts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	span := trace.SpanFromContext(ctx)
 	if span.SpanContext().IsValid() {
-		ctx, span = tracer.Start(ctx, operationName)
+		ctx, span = tracer.Start(ctx, operationName, spanOpts...)
 		return ctx, span
 	}
 
@@ -132,8 +132,10 @@ func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.
 	// check for linked spans
 	linkedSpans := sliceFromLinkedSpans(linkedSpansArray)
 
+	spanOpts = append(spanOpts, trace.WithLinks(linkedSpans...))
+
 	// Create a new span
-	ctx, span = tracer.Start(ctx, operationName, trace.WithLinks(linkedSpans...))
+	ctx, span = tracer.Start(ctx, operationName, spanOpts...)
 	return ctx, span
 }
 
