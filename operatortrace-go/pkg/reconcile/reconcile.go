@@ -19,6 +19,37 @@ import (
 
 type Reconciler = ctrlreconcile.TypedReconciler[tracingtypes.RequestWithTraceID]
 
+// ReconcilerBuilder builds a tracing reconciler with configurable options
+type ReconcilerBuilder[T ctrlclient.Object] struct {
+	client          tracingclient.TracingClient
+	objReconciler   ctrlreconcile.ObjectReconciler[T]
+	disableEndTrace bool
+}
+
+// NewReconcilerBuilder creates a new builder for a tracing reconciler
+func NewReconcilerBuilder[T ctrlclient.Object](client tracingclient.TracingClient, rec ctrlreconcile.ObjectReconciler[T]) *ReconcilerBuilder[T] {
+	return &ReconcilerBuilder[T]{
+		client:        client,
+		objReconciler: rec,
+	}
+}
+
+// WithDisableEndTrace disables the automatic EndTrace call at the end of Reconcile.
+// Use this when you want to manage trace lifecycle manually.
+func (b *ReconcilerBuilder[T]) WithDisableEndTrace() *ReconcilerBuilder[T] {
+	b.disableEndTrace = true
+	return b
+}
+
+// Build constructs the final TypedReconciler
+func (b *ReconcilerBuilder[T]) Build() ctrlreconcile.TypedReconciler[tracingtypes.RequestWithTraceID] {
+	return &objectReconcilerAdapter[T]{
+		objReconciler:   b.objReconciler,
+		client:          b.client,
+		disableEndTrace: b.disableEndTrace,
+	}
+}
+
 func TracingOptions() controller.TypedOptions[tracingtypes.RequestWithTraceID] {
 	myQueueFactory := func(name string, rl workqueue.TypedRateLimiter[tracingtypes.RequestWithTraceID]) workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID] {
 		return tracingqueue.NewTracingQueue()
@@ -29,12 +60,11 @@ func TracingOptions() controller.TypedOptions[tracingtypes.RequestWithTraceID] {
 	return opt
 }
 
-// AsReconciler creates a Reconciler based on the given ObjectReconciler.
+// AsTracingReconciler creates a Reconciler based on the given ObjectReconciler.
+// For simple cases with default configuration.
+// For advanced configuration, use NewReconcilerBuilder instead.
 func AsTracingReconciler[T ctrlclient.Object](client tracingclient.TracingClient, rec ctrlreconcile.ObjectReconciler[T]) ctrlreconcile.TypedReconciler[tracingtypes.RequestWithTraceID] {
-	return &objectReconcilerAdapter[T]{
-		objReconciler: rec,
-		client:        client,
-	}
+	return NewReconcilerBuilder(client, rec).Build()
 }
 
 // objectReconcilerAdapter is the object for creating a reconcile request as a converted object.
@@ -62,7 +92,7 @@ func (a *objectReconcilerAdapter[T]) Reconcile(ctx context.Context, req tracingt
 		span.RecordError(err)
 	}
 
-	if a.disableEndTrace {
+	if !a.disableEndTrace {
 		// errors from EndTrace are recorded in the span
 		a.client.EndTrace(ctx, o)
 	}
