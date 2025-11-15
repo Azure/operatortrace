@@ -125,12 +125,8 @@ func objectToRequestWithTraceID(obj client.Object) tracingtypes.RequestWithTrace
 }
 
 var defaultAnnotationExtractionConfig = tracecontext.AnnotationExtractionConfig{
-	TraceParentKeys: []string{
-		constants.DefaultTraceParentAnnotation,
-	},
-	TraceStateKeys: []string{
-		constants.DefaultTraceStateAnnotation,
-	},
+	TraceParentKey:   constants.DefaultTraceParentAnnotation,
+	TraceStateKey:    constants.DefaultTraceStateAnnotation,
 	LegacyTraceIDKey: constants.LegacyTraceIDAnnotation,
 	LegacySpanIDKey:  constants.LegacySpanIDAnnotation,
 }

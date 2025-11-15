@@ -16,8 +16,8 @@ import (
 
 // AnnotationExtractionConfig describes how to read trace context data from annotations.
 type AnnotationExtractionConfig struct {
-	TraceParentKeys        []string
-	TraceStateKeys         []string
+	TraceParentKey         string
+	TraceStateKey          string
 	LegacyTraceIDKey       string
 	LegacySpanIDKey        string
 	LegacyTimestampKey     string
@@ -100,20 +100,26 @@ func BuildTraceStateString(sc trace.SpanContext, timestampKey string, now time.T
 }
 
 // ExtractTraceContextFromAnnotations attempts to read trace context information using the provided config.
+
 func ExtractTraceContextFromAnnotations(annotations map[string]string, cfg AnnotationExtractionConfig) (AnnotationTraceContext, bool) {
 	if len(annotations) == 0 {
 		return AnnotationTraceContext{}, false
 	}
 
-	if traceParent := firstAnnotationValue(annotations, cfg.TraceParentKeys...); traceParent != "" {
-		traceState := firstAnnotationValue(annotations, cfg.TraceStateKeys...)
-		var timestamp time.Time
-		if cfg.TraceStateTimestampKey != "" {
-			if ts, ok := ExtractTimestampFromTraceState(traceState, cfg.TraceStateTimestampKey); ok {
-				timestamp = ts
+	if cfg.TraceParentKey != "" {
+		if traceParent := annotations[cfg.TraceParentKey]; traceParent != "" {
+			traceState := ""
+			if cfg.TraceStateKey != "" {
+				traceState = annotations[cfg.TraceStateKey]
 			}
+			var timestamp time.Time
+			if cfg.TraceStateTimestampKey != "" {
+				if ts, ok := ExtractTimestampFromTraceState(traceState, cfg.TraceStateTimestampKey); ok {
+					timestamp = ts
+				}
+			}
+			return AnnotationTraceContext{TraceParent: traceParent, TraceState: traceState, Timestamp: timestamp}, true
 		}
-		return AnnotationTraceContext{TraceParent: traceParent, TraceState: traceState, Timestamp: timestamp}, true
 	}
 
 	if cfg.LegacyTraceIDKey == "" || cfg.LegacySpanIDKey == "" {
@@ -137,16 +143,4 @@ func ExtractTraceContextFromAnnotations(annotations map[string]string, cfg Annot
 		}
 	}
 	return AnnotationTraceContext{TraceParent: traceParent, Timestamp: timestamp}, true
-}
-
-func firstAnnotationValue(annotations map[string]string, keys ...string) string {
-	for _, key := range keys {
-		if key == "" {
-			continue
-		}
-		if value := annotations[key]; value != "" {
-			return value
-		}
-	}
-	return ""
 }

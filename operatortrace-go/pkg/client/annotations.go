@@ -68,31 +68,45 @@ func ensureAnnotations(obj client.Object) map[string]string {
 }
 
 func extractTraceContextFromAnnotations(annotations map[string]string, opts Options) (storedTraceContext, bool) {
-	cfg := tracecontext.AnnotationExtractionConfig{
-		TraceParentKeys: []string{
-			opts.IncomingTraceParentAnnotation,
-			opts.emittedTraceParentAnnotationKey(),
-			constants.DefaultTraceParentAnnotation,
-		},
-		TraceStateKeys: []string{
-			opts.IncomingTraceStateAnnotation,
-			opts.emittedTraceStateAnnotationKey(),
-			constants.DefaultTraceStateAnnotation,
-		},
+	baseCfg := tracecontext.AnnotationExtractionConfig{
 		LegacyTraceIDKey:       opts.legacyTraceIDAnnotationKey(),
 		LegacySpanIDKey:        opts.legacySpanIDAnnotationKey(),
 		LegacyTimestampKey:     opts.legacyTraceTimeAnnotationKey(),
 		TraceStateTimestampKey: opts.traceStateTimestampKey(),
 	}
-	result, ok := tracecontext.ExtractTraceContextFromAnnotations(annotations, cfg)
-	if !ok {
-		return storedTraceContext{}, false
+
+	keyCandidates := [][2]string{
+		{opts.IncomingTraceParentAnnotation, opts.IncomingTraceStateAnnotation},
+		{opts.emittedTraceParentAnnotationKey(), opts.emittedTraceStateAnnotationKey()},
+		{constants.DefaultTraceParentAnnotation, constants.DefaultTraceStateAnnotation},
 	}
-	return storedTraceContext{
-		TraceParent: result.TraceParent,
-		TraceState:  result.TraceState,
-		Timestamp:   result.Timestamp,
-	}, true
+
+	for _, candidate := range keyCandidates {
+		parentKey := candidate[0]
+		if parentKey == "" {
+			continue
+		}
+		cfg := baseCfg
+		cfg.TraceParentKey = parentKey
+		cfg.TraceStateKey = candidate[1]
+		if result, ok := tracecontext.ExtractTraceContextFromAnnotations(annotations, cfg); ok {
+			return storedTraceContext{
+				TraceParent: result.TraceParent,
+				TraceState:  result.TraceState,
+				Timestamp:   result.Timestamp,
+			}, true
+		}
+	}
+
+	if result, ok := tracecontext.ExtractTraceContextFromAnnotations(annotations, baseCfg); ok {
+		return storedTraceContext{
+			TraceParent: result.TraceParent,
+			TraceState:  result.TraceState,
+			Timestamp:   result.Timestamp,
+		}, true
+	}
+
+	return storedTraceContext{}, false
 }
 
 func persistTraceCarrier(annotations map[string]string, opts Options, traceParent, traceState string) {
