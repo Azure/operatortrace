@@ -30,6 +30,7 @@ import (
 	"reflect"
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -103,9 +104,7 @@ func isNil(arg any) bool {
 }
 
 func objectToRequestWithTraceID(obj client.Object) tracingtypes.RequestWithTraceID {
-
-	traceId := obj.GetAnnotations()[constants.TraceIDAnnotation]
-	spanId := obj.GetAnnotations()[constants.SpanIDAnnotation]
+	traceID, spanID := traceAndSpanIDsFromAnnotations(obj.GetAnnotations())
 	senderName := obj.GetName()
 	senderKind := obj.GetObjectKind().GroupVersionKind().Kind
 
@@ -117,10 +116,35 @@ func objectToRequestWithTraceID(obj client.Object) tracingtypes.RequestWithTrace
 			},
 		},
 		Parent: tracingtypes.RequestParent{
-			TraceID: traceId,
-			SpanID:  spanId,
+			TraceID: traceID,
+			SpanID:  spanID,
 			Name:    senderName,
 			Kind:    senderKind,
 		},
 	}
+}
+
+var defaultAnnotationExtractionConfig = tracecontext.AnnotationExtractionConfig{
+	TraceParentKeys: []string{
+		constants.DefaultTraceParentAnnotation,
+	},
+	TraceStateKeys: []string{
+		constants.DefaultTraceStateAnnotation,
+	},
+	LegacyTraceIDKey: constants.LegacyTraceIDAnnotation,
+	LegacySpanIDKey:  constants.LegacySpanIDAnnotation,
+}
+
+func traceAndSpanIDsFromAnnotations(annotations map[string]string) (string, string) {
+	tc, found := tracecontext.ExtractTraceContextFromAnnotations(annotations, defaultAnnotationExtractionConfig)
+	if !found {
+		return "", ""
+	}
+
+	spanContext, err := tracecontext.SpanContextFromTraceData(tc.TraceParent, tc.TraceState)
+	if err != nil || !spanContext.IsValid() {
+		return "", ""
+	}
+
+	return spanContext.TraceID().String(), spanContext.SpanID().String()
 }

@@ -7,13 +7,15 @@ package handler
 import (
 	"context"
 	"testing"
-	"time"
 
 	tracingconstants "github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
 
 	tracingqueue "github.com/Azure/operatortrace/operatortrace-go/pkg/tracingqueue"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,10 +26,25 @@ import (
 	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+func init() {
+	// Initialize OTEL text map propagator for tests
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+}
+
 // Test enqueing objects based on the owner reference for create.
+const (
+	baseTraceID           = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	baseSpanID            = "bbbbbbbbbbbbbbbb"
+	differentNameTraceID  = "cccccccccccccccccccccccccccccccc"
+	differentNameSpanID   = "dddddddddddddddd"
+	differentOwnerTraceID = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	differentOwnerSpanID  = "ffffffffffffffff"
+	mixedOwnerTraceID     = "99999999999999999999999999999999"
+	mixedOwnerSpanID      = "8888888888888888"
+)
+
 func TestEnqueueOwnerCreate(t *testing.T) {
 	t.Parallel()
-	currentTime := time.Now()
 
 	// Base node object
 	nodeObjectBase := &corev1.Node{
@@ -35,11 +52,7 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 			Generation:      1,
 			ResourceVersion: "1",
 			Name:            "node1",
-			Annotations: map[string]string{
-				tracingconstants.TraceIDAnnotation:     "a0348e63-d3d6-4df9-a745-7340e997e5c7",
-				tracingconstants.SpanIDAnnotation:      "e997e5c7-d3d6-4df9-a745-a0348e637340",
-				tracingconstants.TraceIDTimeAnnotation: currentTime.Format(time.RFC3339),
-			},
+			Annotations:     traceAnnotations(baseTraceID, baseSpanID),
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "1",
@@ -54,20 +67,12 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 	// Change the node name and use a different trace / span information.
 	nodeObjectWithDifferentNameAndTraceInfo := nodeObjectBase.DeepCopy()
 	nodeObjectWithDifferentNameAndTraceInfo.SetName("node2")
-	nodeObjectWithDifferentNameAndTraceInfo.Annotations = map[string]string{
-		tracingconstants.TraceIDAnnotation:     "second-d3d6-4df9-a745-7340e997e5c7",
-		tracingconstants.SpanIDAnnotation:      "second-d3d6-4df9-a745-a0348e637340",
-		tracingconstants.TraceIDTimeAnnotation: currentTime.Format(time.RFC3339),
-	}
+	nodeObjectWithDifferentNameAndTraceInfo.Annotations = traceAnnotations(differentNameTraceID, differentNameSpanID)
 
 	// Change the node name and use a different Owner.
 	nodeObjectWithDifferentOwnerReference := nodeObjectBase.DeepCopy()
 	nodeObjectWithDifferentOwnerReference.SetName("node3")
-	nodeObjectWithDifferentOwnerReference.Annotations = map[string]string{
-		tracingconstants.TraceIDAnnotation:     "third-d3d6-4df9-a745-7340e997e5c7",
-		tracingconstants.SpanIDAnnotation:      "third-d3d6-4df9-a745-a0348e637340",
-		tracingconstants.TraceIDTimeAnnotation: currentTime.Format(time.RFC3339),
-	}
+	nodeObjectWithDifferentOwnerReference.Annotations = traceAnnotations(differentOwnerTraceID, differentOwnerSpanID)
 	nodeObjectWithDifferentOwnerReference.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: "1",
@@ -80,11 +85,7 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 	// Change the node name and use a the original owner but add a second new owner.
 	nodeObjectWithDifferentOwnerReferenceAndOriginal := nodeObjectBase.DeepCopy()
 	nodeObjectWithDifferentOwnerReferenceAndOriginal.SetName("node4")
-	nodeObjectWithDifferentOwnerReferenceAndOriginal.Annotations = map[string]string{
-		tracingconstants.TraceIDAnnotation:     "fourth-d3d6-4df9-a745-7340e997e5c7",
-		tracingconstants.SpanIDAnnotation:      "fourth-d3d6-4df9-a745-a0348e637340",
-		tracingconstants.TraceIDTimeAnnotation: currentTime.Format(time.RFC3339),
-	}
+	nodeObjectWithDifferentOwnerReferenceAndOriginal.Annotations = traceAnnotations(mixedOwnerTraceID, mixedOwnerSpanID)
 	nodeObjectWithDifferentOwnerReferenceAndOriginal.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: nodeObjectBase.OwnerReferences[0].APIVersion,
@@ -134,8 +135,8 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					Parent: tracingtypes.RequestParent{
 						Name:    nodeObjectBase.Name,
 						Kind:    "Node",
-						TraceID: nodeObjectBase.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-						SpanID:  nodeObjectBase.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+						TraceID: baseTraceID,
+						SpanID:  baseSpanID,
 					},
 					LinkedSpanCount: 0,
 				},
@@ -155,8 +156,8 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					Parent: tracingtypes.RequestParent{
 						Name:    nodeObjectBase.Name,
 						Kind:    "Node",
-						TraceID: nodeObjectBase.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-						SpanID:  nodeObjectBase.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+						TraceID: baseTraceID,
+						SpanID:  baseSpanID,
 					},
 					LinkedSpanCount: 0,
 				},
@@ -170,8 +171,8 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					Parent: tracingtypes.RequestParent{
 						Name:    nodeObjectWithDifferentOwnerReference.Name,
 						Kind:    "Node",
-						TraceID: nodeObjectWithDifferentOwnerReference.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-						SpanID:  nodeObjectWithDifferentOwnerReference.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+						TraceID: differentOwnerTraceID,
+						SpanID:  differentOwnerSpanID,
 					},
 					LinkedSpanCount: 0,
 				},
@@ -191,13 +192,13 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					Parent: tracingtypes.RequestParent{
 						Name:    nodeObjectBase.Name,
 						Kind:    "Node",
-						TraceID: nodeObjectBase.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-						SpanID:  nodeObjectBase.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+						TraceID: baseTraceID,
+						SpanID:  baseSpanID,
 					},
 					LinkedSpans: [10]tracingtypes.LinkedSpan{
 						{
-							TraceID: nodeObjectWithDifferentNameAndTraceInfo.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-							SpanID:  nodeObjectWithDifferentNameAndTraceInfo.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+							TraceID: differentNameTraceID,
+							SpanID:  differentNameSpanID,
 						},
 					},
 					LinkedSpanCount: 1,
@@ -223,8 +224,8 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					},
 					LinkedSpans: [10]tracingtypes.LinkedSpan{
 						{
-							TraceID: nodeObjectBase.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-							SpanID:  nodeObjectBase.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+							TraceID: baseTraceID,
+							SpanID:  baseSpanID,
 						},
 					},
 					LinkedSpanCount: 1,
@@ -245,8 +246,8 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					Parent: tracingtypes.RequestParent{
 						Name:    nodeObjectBase.Name,
 						Kind:    "Node",
-						TraceID: nodeObjectBase.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-						SpanID:  nodeObjectBase.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+						TraceID: baseTraceID,
+						SpanID:  baseSpanID,
 					},
 					LinkedSpanCount: 0,
 				},
@@ -266,13 +267,13 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					Parent: tracingtypes.RequestParent{
 						Name:    nodeObjectBase.Name,
 						Kind:    "Node",
-						TraceID: nodeObjectBase.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-						SpanID:  nodeObjectBase.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+						TraceID: baseTraceID,
+						SpanID:  baseSpanID,
 					},
 					LinkedSpans: [10]tracingtypes.LinkedSpan{
 						{
-							TraceID: nodeObjectWithDifferentOwnerReferenceAndOriginal.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-							SpanID:  nodeObjectWithDifferentOwnerReferenceAndOriginal.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+							TraceID: mixedOwnerTraceID,
+							SpanID:  mixedOwnerSpanID,
 						},
 					},
 					LinkedSpanCount: 1,
@@ -287,8 +288,8 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 					Parent: tracingtypes.RequestParent{
 						Name:    nodeObjectWithDifferentOwnerReferenceAndOriginal.Name,
 						Kind:    "Node",
-						TraceID: nodeObjectWithDifferentOwnerReferenceAndOriginal.GetAnnotations()[tracingconstants.TraceIDAnnotation],
-						SpanID:  nodeObjectWithDifferentOwnerReferenceAndOriginal.GetAnnotations()[tracingconstants.SpanIDAnnotation],
+						TraceID: mixedOwnerTraceID,
+						SpanID:  mixedOwnerSpanID,
 					},
 					LinkedSpanCount: 0,
 				},
@@ -331,4 +332,21 @@ func TestEnqueueOwnerCreate(t *testing.T) {
 		})
 	}
 
+}
+
+func traceAnnotations(traceID, spanID string) map[string]string {
+	if traceID == "" || spanID == "" {
+		return map[string]string{}
+	}
+	return map[string]string{
+		tracingconstants.DefaultTraceParentAnnotation: mustBuildTraceParent(traceID, spanID),
+	}
+}
+
+func mustBuildTraceParent(traceID, spanID string) string {
+	traceParent, err := tracecontext.TraceParentFromIDs(traceID, spanID)
+	if err != nil {
+		panic(err)
+	}
+	return traceParent
 }

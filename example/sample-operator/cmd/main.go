@@ -28,6 +28,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -90,6 +91,9 @@ func initTracer(ctx context.Context) func() {
 
 	// Set the global trace provider
 	otel.SetTracerProvider(tp)
+
+	// Set the global text map propagator for W3C trace context propagation
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 
 	// Return a function to shutdown the tracer provider
 	return func() {

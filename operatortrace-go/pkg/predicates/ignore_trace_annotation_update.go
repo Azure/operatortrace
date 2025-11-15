@@ -51,7 +51,15 @@ func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEv
 	finalizersChanged := !equality.Semantic.DeepEqual(e.ObjectOld.GetFinalizers(), e.ObjectNew.GetFinalizers())
 	ownerReferenceChanged := !equality.Semantic.DeepEqual(e.ObjectOld.GetOwnerReferences(), e.ObjectNew.GetOwnerReferences())
 
-	otherAnnotationsChanged := !equalExcept(oldAnnotations, newAnnotations, constants.TraceIDAnnotation, constants.SpanIDAnnotation, constants.TraceIDTimeAnnotation)
+	otherAnnotationsChanged := !equalExcept(
+		oldAnnotations,
+		newAnnotations,
+		constants.DefaultTraceParentAnnotation,
+		constants.DefaultTraceStateAnnotation,
+		constants.LegacyTraceIDAnnotation,
+		constants.LegacySpanIDAnnotation,
+		constants.LegacyTraceIDTimeAnnotation,
+	)
 
 	// Check if the spec or status fields have changed
 	specOrStatusChanged := hasSpecOrStatusOrDataChanged(e.ObjectOld, e.ObjectNew)

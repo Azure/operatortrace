@@ -8,13 +8,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +39,46 @@ func initTracer() trace.Tracer {
 	otel.SetTracerProvider(tp)
 
 	return tp.Tracer("operatortrace")
+}
+
+func init() {
+	// Initialize OTEL text map propagator for tests
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+}
+
+const (
+	testTraceIDHex = "1234567890abcdef1234567890abcdef"
+	testSpanIDHex  = "abcdef1234567890"
+)
+
+func tracingClientOptionsForTest(t *testing.T, tc TracingClient) Options {
+	t.Helper()
+	impl, ok := tc.(*tracingClient)
+	require.True(t, ok, "expected *tracingClient")
+	return impl.options
+}
+
+func annotateObjectWithTraceIDs(t *testing.T, obj client.Object, opts Options, traceID, spanID string) {
+	t.Helper()
+	traceParent, err := tracecontext.TraceParentFromIDs(traceID, spanID)
+	require.NoError(t, err)
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	persistTraceCarrier(annotations, opts, traceParent, "")
+	obj.SetAnnotations(annotations)
+}
+
+func traceIDsFromObject(t *testing.T, obj client.Object, opts Options) (string, string) {
+	t.Helper()
+	stored, ok := extractTraceContextFromAnnotations(obj.GetAnnotations(), opts)
+	if !ok || stored.TraceParent == "" {
+		return "", ""
+	}
+	spanContext, err := tracecontext.SpanContextFromTraceData(stored.TraceParent, stored.TraceState)
+	require.NoError(t, err)
+	return spanContext.TraceID().String(), spanContext.SpanID().String()
 }
 
 func TestNewTracingClient(t *testing.T) {
@@ -67,9 +109,10 @@ func TestEmbedTraceIDInRequest(t *testing.T) {
 	corev1.AddToScheme(scheme)
 
 	tracingClient := &tracingClient{
-		Logger: logr.Discard(),
-		scheme: scheme,
-		Client: fakeClient,
+		Logger:  logr.Discard(),
+		scheme:  scheme,
+		Client:  fakeClient,
+		options: newOptions(),
 	}
 
 	// Mock object with traceID and spanID annotations
@@ -77,12 +120,9 @@ func TestEmbedTraceIDInRequest(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "default",
-			Annotations: map[string]string{
-				constants.TraceIDAnnotation: "1234",
-				constants.SpanIDAnnotation:  "5678",
-			},
 		},
 	}
+	annotateObjectWithTraceIDs(t, pod, tracingClient.options, testTraceIDHex, testSpanIDHex)
 
 	// Set up a trace id request
 	request := tracingtypes.RequestWithTraceID{
@@ -101,8 +141,8 @@ func TestEmbedTraceIDInRequest(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Assert the object has been updated correctly
-	assert.Equal(t, "1234", request.Parent.TraceID)
-	assert.Equal(t, "5678", request.Parent.SpanID)
+	assert.Equal(t, testTraceIDHex, request.Parent.TraceID)
+	assert.Equal(t, testSpanIDHex, request.Parent.SpanID)
 	assert.Equal(t, "test-pod", request.Parent.Name)
 }
 
@@ -122,6 +162,7 @@ func TestAutomaticAnnotationManagement(t *testing.T) {
 	logger := logr.Discard()
 	// Initialize the TracingClient
 	tracingClient := NewTracingClient(k8sClient, k8sClient, tracer, logger)
+	opts := tracingClientOptionsForTest(t, tracingClient)
 
 	ctx := context.Background()
 
@@ -150,9 +191,10 @@ func TestAutomaticAnnotationManagement(t *testing.T) {
 	retrievedPod := &corev1.Pod{}
 	err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, retrievedPod)
 	assert.NoError(t, err)
-	assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
-	assert.NotEqual(t, spanID, retrievedPod.Annotations[constants.SpanIDAnnotation])
-	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
+	savedTraceID, savedSpanID := traceIDsFromObject(t, retrievedPod, opts)
+	assert.Equal(t, traceID, savedTraceID)
+	assert.NotEqual(t, spanID, savedSpanID)
+	assert.Equal(t, len(spanID), len(savedSpanID))
 }
 
 func TestPassingTraceIdInNamespacedName(t *testing.T) {
@@ -169,8 +211,8 @@ func TestPassingTraceIdInNamespacedName(t *testing.T) {
 
 	// Create a logger
 	logger := logr.Discard()
-	// Initialize the TracingClient
-	tracingClient := NewTracingClient(k8sClient, k8sClient, tracer, logger)
+	// Initialize the TracingClient with parent relationship so trace ID is inherited
+	tracingClient := NewTracingClientWithOptions(k8sClient, k8sClient, tracer, logger, nil, WithIncomingTraceRelationship(TraceParentRelationshipParent))
 
 	ctx := context.Background()
 
@@ -236,6 +278,7 @@ func TestChainReactionTracing(t *testing.T) {
 	// Create a new TracingClient to simulate a fresh client
 	newK8sClient := fake.NewClientBuilder().WithObjects(initialPod).Build()
 	newTracingClient := NewTracingClient(newK8sClient, newK8sClient, tracer, logger)
+	newOpts := tracingClientOptionsForTest(t, newTracingClient)
 
 	// Retrieve the initial Pod to get the trace ID
 	retrievedInitialPod := &corev1.Pod{}
@@ -243,8 +286,7 @@ func TestChainReactionTracing(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Extract the trace ID from the retrieved initial pod annotations
-	savedtraceID := retrievedInitialPod.Annotations[constants.TraceIDAnnotation]
-	savedSpanID := retrievedInitialPod.Annotations[constants.SpanIDAnnotation]
+	savedtraceID, savedSpanID := traceIDsFromObject(t, retrievedInitialPod, newOpts)
 	assert.Equal(t, traceID, savedtraceID)
 	assert.NotEqual(t, spanID, savedSpanID)
 
@@ -260,7 +302,8 @@ func TestChainReactionTracing(t *testing.T) {
 		traceid, _ := getConditionMessage("TraceID", retrievedPatchedPod, k8sClient.Scheme())
 		assert.Equal(t, savedtraceID, traceid)
 		//Annotations will not be patched with Status.Patch
-		assert.Equal(t, savedSpanID, retrievedPatchedPod.Annotations[constants.SpanIDAnnotation])
+		_, patchedSpanID := traceIDsFromObject(t, retrievedPatchedPod, newOpts)
+		assert.Equal(t, savedSpanID, patchedSpanID)
 	})
 }
 
@@ -281,6 +324,7 @@ func TestUpdateWithTracing(t *testing.T) {
 
 	// Initialize the TracingClient
 	tracingClient := NewTracingClient(k8sClient, k8sClient, tracer, logger)
+	opts := tracingClientOptionsForTest(t, tracingClient)
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
@@ -313,17 +357,19 @@ func TestUpdateWithTracing(t *testing.T) {
 	retrievedPod := &corev1.Pod{}
 	err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, retrievedPod)
 	assert.NoError(t, err)
-	assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
+	savedTraceID, savedSpanID := traceIDsFromObject(t, retrievedPod, opts)
+	assert.Equal(t, traceID, savedTraceID)
 	assert.Equal(t, "true", retrievedPod.Labels["updated"])
-	assert.NotEqual(t, spanID, retrievedPod.Annotations[constants.SpanIDAnnotation])
-	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
+	assert.NotEqual(t, spanID, savedSpanID)
+	assert.Equal(t, len(spanID), len(savedSpanID))
 
 	// Test status update with tracing
 	t.Run("update status with tracing", func(t *testing.T) {
 		pod.Status.Phase = corev1.PodRunning
 		err = tracingClient.Status().Update(ctx, retrievedPod)
 		assert.NoError(t, err)
-		assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
+		currentTraceID, _ := traceIDsFromObject(t, retrievedPod, opts)
+		assert.Equal(t, traceID, currentTraceID)
 	})
 
 	// Update without any meaningful changes
@@ -414,6 +460,7 @@ func TestPatchWithTracing(t *testing.T) {
 
 	// Initialize the TracingClient
 	tracingClient := NewTracingClient(k8sClient, k8sClient, tracer, logger)
+	opts := tracingClientOptionsForTest(t, tracingClient)
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
@@ -447,10 +494,11 @@ func TestPatchWithTracing(t *testing.T) {
 	retrievedPod := &corev1.Pod{}
 	err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, retrievedPod)
 	assert.NoError(t, err)
-	assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
+	savedTraceID, savedSpanID := traceIDsFromObject(t, retrievedPod, opts)
+	assert.Equal(t, traceID, savedTraceID)
 	assert.Equal(t, "true", retrievedPod.Labels["updated"])
-	assert.NotEqual(t, spanID, retrievedPod.Annotations[constants.SpanIDAnnotation])
-	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
+	assert.NotEqual(t, spanID, savedSpanID)
+	assert.Equal(t, len(spanID), len(savedSpanID))
 
 	t.Run("status create with tracing", func(t *testing.T) {
 		err := tracingClient.Status().Create(ctx, retrievedPod, retrievedPod)
@@ -477,6 +525,7 @@ func TestPatchWithTracingClientMerge(t *testing.T) {
 
 	// Initialize the TracingClient
 	tracingClient := NewTracingClient(k8sClient, k8sClient, tracer, logger)
+	opts := tracingClientOptionsForTest(t, tracingClient)
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
@@ -517,11 +566,12 @@ func TestPatchWithTracingClientMerge(t *testing.T) {
 	retrievedPod := &corev1.Pod{}
 	err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, retrievedPod)
 	assert.NoError(t, err)
-	assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
+	savedTraceID, savedSpanID := traceIDsFromObject(t, retrievedPod, opts)
+	assert.Equal(t, traceID, savedTraceID)
 	assert.Equal(t, "true", retrievedPod.Labels["updated"])
 	assert.Equal(t, "test-pod", retrievedPod.OwnerReferences[0].Name)
-	assert.NotEqual(t, spanID, retrievedPod.Annotations[constants.SpanIDAnnotation])
-	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
+	assert.NotEqual(t, spanID, savedSpanID)
+	assert.Equal(t, len(spanID), len(savedSpanID))
 
 	t.Run("status create with tracing", func(t *testing.T) {
 		err := tracingClient.Status().Create(ctx, retrievedPod, retrievedPod)
@@ -548,6 +598,7 @@ func TestEndTrace(t *testing.T) {
 
 	// Initialize the TracingClient
 	tracingClient := NewTracingClient(k8sClient, k8sClient, tracer, logger)
+	opts := tracingClientOptionsForTest(t, tracingClient)
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
@@ -591,10 +642,11 @@ func TestEndTrace(t *testing.T) {
 	retrievedPod := &corev1.Pod{}
 	err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, retrievedPod)
 	assert.NoError(t, err)
-	assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
+	savedTraceID, savedSpanID := traceIDsFromObject(t, retrievedPod, opts)
+	assert.Equal(t, traceID, savedTraceID)
 	assert.Equal(t, "true", retrievedPod.Labels["updated"])
-	assert.NotEqual(t, spanID, retrievedPod.Annotations[constants.SpanIDAnnotation])
-	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
+	assert.NotEqual(t, spanID, savedSpanID)
+	assert.Equal(t, len(spanID), len(savedSpanID))
 
 	// Test EndTrace
 	err = tracingClient.EndTrace(ctx, retrievedPod)
@@ -603,8 +655,9 @@ func TestEndTrace(t *testing.T) {
 	// Get the pod with default kubernetes client to ensure that there is no traceID and spanID
 	err = k8sClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, finalPod)
 	assert.NoError(t, err)
-	assert.Empty(t, finalPod.Annotations[constants.TraceIDAnnotation])
-	assert.Empty(t, finalPod.Annotations[constants.SpanIDAnnotation])
+	finalTraceID, finalSpanID := traceIDsFromObject(t, finalPod, opts)
+	assert.Empty(t, finalTraceID)
+	assert.Empty(t, finalSpanID)
 	assert.Equal(t, 1, len(finalPod.Status.Conditions))
 }
 
@@ -625,6 +678,7 @@ func TestEndTraceChangedAnnotation(t *testing.T) {
 
 	// Initialize the TracingClient
 	tracingClient := NewTracingClient(k8sClient, k8sClient, tracer, logger)
+	opts := tracingClientOptionsForTest(t, tracingClient)
 
 	ctx := context.Background()
 	// Create a spanId since no GET is being called to initialize the span
@@ -658,10 +712,11 @@ func TestEndTraceChangedAnnotation(t *testing.T) {
 	retrievedPod := &corev1.Pod{}
 	err = tracingClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, retrievedPod)
 	assert.NoError(t, err)
-	assert.Equal(t, traceID, retrievedPod.Annotations[constants.TraceIDAnnotation])
+	savedTraceID, savedSpanID := traceIDsFromObject(t, retrievedPod, opts)
+	assert.Equal(t, traceID, savedTraceID)
 	assert.Equal(t, "true", retrievedPod.Labels["updated"])
-	assert.NotEqual(t, spanID, retrievedPod.Annotations[constants.SpanIDAnnotation])
-	assert.Equal(t, len(spanID), len(retrievedPod.Annotations[constants.SpanIDAnnotation]))
+	assert.NotEqual(t, spanID, savedSpanID)
+	assert.Equal(t, len(spanID), len(savedSpanID))
 
 	// Initialize the TracingClient
 	tracingClientNew := NewTracingClient(k8sClient, k8sClient, tracer, logger)
@@ -682,8 +737,9 @@ func TestEndTraceChangedAnnotation(t *testing.T) {
 	// Get the pod with default kubernetes client to ensure that there is no traceID and spanID
 	err = k8sClient.Get(ctx, client.ObjectKey{Name: "test-pod", Namespace: "default"}, finalPod)
 	assert.NoError(t, err)
-	assert.Equal(t, traceIDNew, finalPod.Annotations[constants.TraceIDAnnotation])
-	assert.NotEmpty(t, finalPod.Annotations[constants.SpanIDAnnotation])
+	finalTraceID, finalSpanID := traceIDsFromObject(t, finalPod, opts)
+	assert.Equal(t, traceIDNew, finalTraceID)
+	assert.NotEmpty(t, finalSpanID)
 }
 
 func TestListWithTracing(t *testing.T) {
