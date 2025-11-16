@@ -102,7 +102,12 @@ func applyStoredTraceContext(ctx context.Context, stored storedTraceContext, opt
 		return ctx, incomingLink
 	}
 
-	if opts.IncomingTraceRelationship == TraceParentRelationshipParent {
+	relationship := stored.Relationship
+	if relationship == "" {
+		relationship = opts.IncomingTraceRelationship
+	}
+
+	if relationship == TraceParentRelationshipParent {
 		ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
 		return ctx, incomingLink
 	}
@@ -128,7 +133,8 @@ func extractTraceContextFromConditions(obj client.Object, scheme *runtime.Scheme
 		timestamp = ts.Time
 	}
 	return storedTraceContext{
-		TraceParent: traceParent,
-		Timestamp:   timestamp,
+		TraceParent:  traceParent,
+		Timestamp:    timestamp,
+		Relationship: TraceParentRelationshipParent,
 	}, true
 }

@@ -259,12 +259,13 @@ func main() {
 	}
 
 	// Create the tracing client
-	tracingClient := operatortrace.NewTracingClient(
+	tracingClient := operatortrace.NewTracingClientWithOptions(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		otel.Tracer("operatortrace"),
 		logger,
 		mgr.GetScheme(),
+		operatortrace.WithIncomingTraceRelationship(operatortrace.TraceParentRelationshipParent),
 	)
 
 	sampleReconciler := &controller.SampleReconciler{

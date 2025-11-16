@@ -18,9 +18,10 @@ import (
 )
 
 type storedTraceContext struct {
-	TraceParent string
-	TraceState  string
-	Timestamp   time.Time
+	TraceParent  string
+	TraceState   string
+	Timestamp    time.Time
+	Relationship TraceParentRelationship
 }
 
 // addTraceAnnotations stores the current span context on the kubernetes object using traceparent/tracestate.
@@ -75,34 +76,64 @@ func extractTraceContextFromAnnotations(annotations map[string]string, opts Opti
 		TraceStateTimestampKey: opts.traceStateTimestampKey(),
 	}
 
-	keyCandidates := [][2]string{
-		{opts.IncomingTraceParentAnnotation, opts.IncomingTraceStateAnnotation},
-		{opts.emittedTraceParentAnnotationKey(), opts.emittedTraceStateAnnotationKey()},
-		{constants.DefaultTraceParentAnnotation, constants.DefaultTraceStateAnnotation},
+	type candidate struct {
+		parentKey    string
+		stateKey     string
+		relationship TraceParentRelationship
 	}
 
-	for _, candidate := range keyCandidates {
-		parentKey := candidate[0]
-		if parentKey == "" {
+	emittedParentKey := opts.emittedTraceParentAnnotationKey()
+	emittedStateKey := opts.emittedTraceStateAnnotationKey()
+	defaultParentKey := constants.DefaultTraceParentAnnotation
+	defaultStateKey := constants.DefaultTraceStateAnnotation
+
+	candidates := []candidate{
+		{
+			parentKey:    opts.IncomingTraceParentAnnotation,
+			stateKey:     opts.IncomingTraceStateAnnotation,
+			relationship: opts.IncomingTraceRelationship,
+		},
+		{
+			parentKey:    emittedParentKey,
+			stateKey:     emittedStateKey,
+			relationship: TraceParentRelationshipParent,
+		},
+	}
+	if defaultParentKey != emittedParentKey || defaultStateKey != emittedStateKey {
+		candidates = append(candidates, candidate{
+			parentKey:    defaultParentKey,
+			stateKey:     defaultStateKey,
+			relationship: TraceParentRelationshipParent,
+		})
+	}
+
+	for _, cand := range candidates {
+		if cand.parentKey == "" {
 			continue
 		}
 		cfg := baseCfg
-		cfg.TraceParentKey = parentKey
-		cfg.TraceStateKey = candidate[1]
+		cfg.TraceParentKey = cand.parentKey
+		cfg.TraceStateKey = cand.stateKey
 		if result, ok := tracecontext.ExtractTraceContextFromAnnotations(annotations, cfg); ok {
+			relationship := cand.relationship
+			if relationship == "" {
+				relationship = opts.IncomingTraceRelationship
+			}
 			return storedTraceContext{
-				TraceParent: result.TraceParent,
-				TraceState:  result.TraceState,
-				Timestamp:   result.Timestamp,
+				TraceParent:  result.TraceParent,
+				TraceState:   result.TraceState,
+				Timestamp:    result.Timestamp,
+				Relationship: relationship,
 			}, true
 		}
 	}
 
 	if result, ok := tracecontext.ExtractTraceContextFromAnnotations(annotations, baseCfg); ok {
 		return storedTraceContext{
-			TraceParent: result.TraceParent,
-			TraceState:  result.TraceState,
-			Timestamp:   result.Timestamp,
+			TraceParent:  result.TraceParent,
+			TraceState:   result.TraceState,
+			Timestamp:    result.Timestamp,
+			Relationship: TraceParentRelationshipParent,
 		}, true
 	}
 
