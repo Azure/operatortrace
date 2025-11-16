@@ -50,6 +50,8 @@ func (tq *TracingQueue) Add(req tracingtypes.RequestWithTraceID) {
 			}
 			appendLinkedSpan(existing, newLinkedSpan)
 		}
+		// Mark dirty in underlying queue so it requeues after Done()
+		tq.queue.Add(req.NamespacedName)
 	} else {
 		tval := req // Copy, to avoid retaining the caller's pointer.
 		tq.m[req.NamespacedName] = &tval
@@ -90,6 +92,8 @@ func (tq *TracingQueue) AddRateLimited(req tracingtypes.RequestWithTraceID) {
 			}
 			appendLinkedSpan(existing, newLinkedSpan)
 		}
+		// Mark dirty in underlying queue so it requeues after Done()
+		tq.queue.AddRateLimited(req.NamespacedName)
 	} else {
 		tval := req
 		tq.m[req.NamespacedName] = &tval
