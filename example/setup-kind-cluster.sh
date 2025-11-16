@@ -29,7 +29,7 @@ if cluster_exists; then
 
     cd sample-operator && make manifests && make install && make deploy
 
-    kubectl apply -f sample-operator/config/samples/app_v1_sample.yaml
+    kubectl apply -f config/samples/app_v1_sample.yaml
 
     exit 0
 fi
@@ -92,7 +92,7 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 # 7. Wait for cert manager to be ready
 echo "Waiting for cert-manager to be ready..."
-while ! kubectl wait --for=condition=available --timeout=60s deployment/cert-manager -n cert-manager; do
+while ! kubectl wait --for=condition=available --timeout=60s deployment/cert-manager deployment/cert-manager-webhook -n cert-manager; do
   echo "Waiting for cert-manager to be ready..."
   sleep 5
 done
