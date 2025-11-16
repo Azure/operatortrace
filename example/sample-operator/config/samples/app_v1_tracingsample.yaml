@@ -1,11 +1,10 @@
 apiVersion: app.azure.microsoft.com/v1
-kind: Sample
+kind: TracingSample
 metadata:
   labels:
     app.kubernetes.io/name: example-operator
     app.kubernetes.io/managed-by: kustomize
-  name: sample2
+  name: sample1
   namespace: monitoring
 spec:
-  foo: "hello"
-  bar: 1
+  value: 0

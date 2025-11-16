@@ -278,6 +278,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	tracingSampleReconciler := &controller.TracingSampleReconciler{
+		Client: tracingClient,
+		Scheme: mgr.GetScheme(),
+	}
+
+	if err = tracingSampleReconciler.SetupWithManager(mgr, tracingClient); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TracingSample")
+		os.Exit(1)
+	}
+
+	tracingPingerReconciler := &controller.TracingPingerReconciler{
+		Client: tracingClient,
+		Scheme: mgr.GetScheme(),
+	}
+
+	if err = tracingPingerReconciler.SetupWithManager(mgr, tracingClient); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TracingPinger")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {

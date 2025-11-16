@@ -29,6 +29,7 @@ import (
 	"context"
 	"reflect"
 
+	tracingclient "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
@@ -65,14 +66,14 @@ func (e *TypedEnqueueRequestForObject[T]) Create(ctx context.Context, evt event.
 	if isNil(evt.Object) {
 		return
 	}
-	q.Add(e.objectToRequestWithTraceID(evt.Object))
+	q.Add(e.objectToRequestWithTraceID(evt.Object, "Create"))
 }
 
 // Update implements EventHandler.
 func (e *TypedEnqueueRequestForObject[T]) Update(ctx context.Context, evt event.TypedUpdateEvent[T], q workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID]) {
 	switch {
 	case !isNil(evt.ObjectNew):
-		q.Add(e.objectToRequestWithTraceID(evt.ObjectNew))
+		q.Add(e.objectToRequestWithTraceID(evt.ObjectNew, "Update"))
 	case !isNil(evt.ObjectOld):
 		// Do not enqueue the old object, as it is not the source of the event.
 	default:
@@ -85,7 +86,7 @@ func (e *TypedEnqueueRequestForObject[T]) Delete(ctx context.Context, evt event.
 	if isNil(evt.Object) {
 		return
 	}
-	q.Add(e.objectToRequestWithTraceID(evt.Object))
+	q.Add(e.objectToRequestWithTraceID(evt.Object, "Delete"))
 }
 
 // Generic implements EventHandler.
@@ -93,7 +94,7 @@ func (e *TypedEnqueueRequestForObject[T]) Generic(ctx context.Context, evt event
 	if isNil(evt.Object) {
 		return
 	}
-	q.Add(e.objectToRequestWithTraceID(evt.Object))
+	q.Add(e.objectToRequestWithTraceID(evt.Object, "Generic"))
 }
 
 func isNil(arg any) bool {
@@ -108,8 +109,13 @@ func isNil(arg any) bool {
 	return false
 }
 
-func (e *TypedEnqueueRequestForObject[T]) objectToRequestWithTraceID(obj client.Object) tracingtypes.RequestWithTraceID {
+func (e *TypedEnqueueRequestForObject[T]) objectToRequestWithTraceID(obj client.Object, eventKind string) tracingtypes.RequestWithTraceID {
 	traceID, spanID := traceAndSpanIDsFromAnnotations(obj.GetAnnotations())
+	if (traceID == "" || spanID == "") && e.Scheme != nil {
+		if condTraceID, condSpanID := traceAndSpanIDsFromStatus(obj, e.Scheme); condTraceID != "" && condSpanID != "" {
+			traceID, spanID = condTraceID, condSpanID
+		}
+	}
 	senderName := obj.GetName()
 	senderKind := ""
 
@@ -129,10 +135,11 @@ func (e *TypedEnqueueRequestForObject[T]) objectToRequestWithTraceID(obj client.
 			},
 		},
 		Parent: tracingtypes.RequestParent{
-			TraceID: traceID,
-			SpanID:  spanID,
-			Name:    senderName,
-			Kind:    senderKind,
+			TraceID:   traceID,
+			SpanID:    spanID,
+			Name:      senderName,
+			Kind:      senderKind,
+			EventKind: eventKind,
 		},
 	}
 }
@@ -156,4 +163,16 @@ func traceAndSpanIDsFromAnnotations(annotations map[string]string) (string, stri
 	}
 
 	return spanContext.TraceID().String(), spanContext.SpanID().String()
+}
+
+func traceAndSpanIDsFromStatus(obj client.Object, scheme *runtime.Scheme) (string, string) {
+	traceID, err := tracingclient.GetConditionMessage("TraceID", obj, scheme)
+	if err != nil || traceID == "" {
+		return "", ""
+	}
+	spanID, err := tracingclient.GetConditionMessage("SpanID", obj, scheme)
+	if err != nil || spanID == "" {
+		return "", ""
+	}
+	return traceID, spanID
 }

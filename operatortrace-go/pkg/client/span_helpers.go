@@ -116,11 +116,11 @@ func applyStoredTraceContext(ctx context.Context, stored storedTraceContext, opt
 }
 
 func extractTraceContextFromConditions(obj client.Object, scheme *runtime.Scheme) (storedTraceContext, bool) {
-	traceID, err := getConditionMessage("TraceID", obj, scheme)
+	traceID, err := GetConditionMessage("TraceID", obj, scheme)
 	if err != nil || traceID == "" {
 		return storedTraceContext{}, false
 	}
-	spanID, err := getConditionMessage("SpanID", obj, scheme)
+	spanID, err := GetConditionMessage("SpanID", obj, scheme)
 	if err != nil || spanID == "" {
 		return storedTraceContext{}, false
 	}
@@ -129,7 +129,7 @@ func extractTraceContextFromConditions(obj client.Object, scheme *runtime.Scheme
 		return storedTraceContext{}, false
 	}
 	var timestamp time.Time
-	if ts, err := getConditionTime("TraceID", obj, scheme); err == nil {
+	if ts, err := GetConditionTime("TraceID", obj, scheme); err == nil {
 		timestamp = ts.Time
 	}
 	return storedTraceContext{

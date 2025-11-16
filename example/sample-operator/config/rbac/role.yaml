@@ -8,6 +8,8 @@ rules:
   - app.azure.microsoft.com
   resources:
   - samples
+  - tracingpingers
+  - tracingsamples
   verbs:
   - create
   - delete
@@ -20,12 +22,16 @@ rules:
   - app.azure.microsoft.com
   resources:
   - samples/finalizers
+  - tracingpingers/finalizers
+  - tracingsamples/finalizers
   verbs:
   - update
 - apiGroups:
   - app.azure.microsoft.com
   resources:
   - samples/status
+  - tracingpingers/status
+  - tracingsamples/status
   verbs:
   - get
   - patch

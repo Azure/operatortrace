@@ -1,4 +1,6 @@
 ## Append samples of your project ##
 resources:
 - app_v1_sample.yaml
+- app_v1_tracingsample.yaml
+- app_v1_tracingpinger.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

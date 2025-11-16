@@ -299,7 +299,7 @@ func TestChainReactionTracing(t *testing.T) {
 		retrievedPatchedPod := &corev1.Pod{}
 		err = newTracingClient.Get(ctx, client.ObjectKey{Name: "initial-pod", Namespace: "default"}, retrievedPatchedPod)
 		assert.NoError(t, err)
-		traceid, _ := getConditionMessage("TraceID", retrievedPatchedPod, k8sClient.Scheme())
+		traceid, _ := GetConditionMessage("TraceID", retrievedPatchedPod, k8sClient.Scheme())
 		assert.Equal(t, savedtraceID, traceid)
 		//Annotations will not be patched with Status.Patch
 		_, patchedSpanID := traceIDsFromObject(t, retrievedPatchedPod, newOpts)
@@ -907,7 +907,7 @@ func TestGetConditionMessage(t *testing.T) {
 	}
 
 	// Retrieve the condition message using the getConditionMessage function
-	message, err := getConditionMessage("PodScheduled", pod, scheme)
+	message, err := GetConditionMessage("PodScheduled", pod, scheme)
 
 	// Assert no error occurred
 	assert.NoError(t, err)
@@ -948,7 +948,7 @@ func TestSetConditionMessage(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Retrieve the updated condition message using the getConditionMessage function
-	message, err := getConditionMessage("PodScheduled", pod, scheme)
+	message, err := GetConditionMessage("PodScheduled", pod, scheme)
 
 	// Assert no error occurred
 	assert.NoError(t, err)
@@ -964,7 +964,7 @@ func TestSetConditionMessage(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Retrieve the new condition message using the getConditionMessage function
-	message, err = getConditionMessage("NewCondition", pod, scheme)
+	message, err = GetConditionMessage("NewCondition", pod, scheme)
 
 	// Assert no error occurred
 	assert.NoError(t, err)
