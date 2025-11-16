@@ -41,24 +41,20 @@ func (tq *TracingQueue) Add(req tracingtypes.RequestWithTraceID) {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
-	delete(tq.softDeleted, req.NamespacedName)
-
-	entry, found := tq.m[req.NamespacedName]
-	if !found {
-		tval := req // Copy, to avoid retaining the caller's pointer.
-		entry = &tval
-		tq.m[req.NamespacedName] = entry
-	}
-
-	if entry.Parent.TraceID != req.Parent.TraceID || entry.Parent.SpanID != req.Parent.SpanID {
-		newLinkedSpan := tracingtypes.LinkedSpan{
-			TraceID: req.Parent.TraceID,
-			SpanID:  req.Parent.SpanID,
+	if _, found := tq.m[req.NamespacedName]; found {
+		existing := tq.m[req.NamespacedName]
+		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
+			newLinkedSpan := tracingtypes.LinkedSpan{
+				TraceID: req.Parent.TraceID,
+				SpanID:  req.Parent.SpanID,
+			}
+			appendLinkedSpan(existing, newLinkedSpan)
 		}
-		appendLinkedSpan(entry, newLinkedSpan)
+	} else {
+		tval := req // Copy, to avoid retaining the caller's pointer.
+		tq.m[req.NamespacedName] = &tval
+		tq.queue.Add(req.NamespacedName)
 	}
-
-	tq.queue.Add(req.NamespacedName)
 }
 
 // AddAfter adds or merges a tracing request into the queue, deduping by key, with a delay.
@@ -66,18 +62,17 @@ func (tq *TracingQueue) AddAfter(req tracingtypes.RequestWithTraceID, duration t
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
-	delete(tq.softDeleted, req.NamespacedName)
-
 	if _, found := tq.m[req.NamespacedName]; !found {
-		// Don't link to any previous span for delayed requeues
+		// Don't link to any previous span
 		tval := req
-		tval.LinkedSpanCount = 0
-		tval.LinkedSpans = [10]tracingtypes.LinkedSpan{}
-		tval.Parent = tracingtypes.RequestParent{}
+		req.LinkedSpanCount = 0
+		req.LinkedSpans = [10]tracingtypes.LinkedSpan{} // Reset linked spans
+		req.Parent = tracingtypes.RequestParent{}
 		tq.m[req.NamespacedName] = &tval
+		tq.queue.AddAfter(req.NamespacedName, duration)
 	}
 
-	tq.queue.AddAfter(req.NamespacedName, duration)
+	// If the request already exists, we do not update it here.
 }
 
 // AddRateLimited adds or merges a tracing request into the queue, deduping by key, with rate limiting.
@@ -85,24 +80,21 @@ func (tq *TracingQueue) AddRateLimited(req tracingtypes.RequestWithTraceID) {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
-	delete(tq.softDeleted, req.NamespacedName)
-
-	entry, found := tq.m[req.NamespacedName]
-	if !found {
-		tval := req
-		entry = &tval
-		tq.m[req.NamespacedName] = entry
-	}
-
-	if entry.Parent.TraceID != req.Parent.TraceID || entry.Parent.SpanID != req.Parent.SpanID {
-		newLinkedSpan := tracingtypes.LinkedSpan{
-			TraceID: req.Parent.TraceID,
-			SpanID:  req.Parent.SpanID,
+	// This is usually called after an error so keeping it linked to the previous span.
+	if _, found := tq.m[req.NamespacedName]; found {
+		existing := tq.m[req.NamespacedName]
+		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
+			newLinkedSpan := tracingtypes.LinkedSpan{
+				TraceID: req.Parent.TraceID,
+				SpanID:  req.Parent.SpanID,
+			}
+			appendLinkedSpan(existing, newLinkedSpan)
 		}
-		appendLinkedSpan(entry, newLinkedSpan)
+	} else {
+		tval := req
+		tq.m[req.NamespacedName] = &tval
+		tq.queue.AddRateLimited(req.NamespacedName)
 	}
-
-	tq.queue.AddRateLimited(req.NamespacedName)
 }
 
 // Forget removes a tracing request from the queue, if it exists.
@@ -161,7 +153,6 @@ func (tq *TracingQueue) Get() (req tracingtypes.RequestWithTraceID, shutdown boo
 	// Check softDeleted map
 	softPtr, softFound := tq.softDeleted[key]
 	if softFound && softPtr != nil {
-		delete(tq.softDeleted, key)
 		return *softPtr, false
 	}
 	// Key not found in either map
