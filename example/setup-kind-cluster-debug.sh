@@ -19,8 +19,8 @@ if cluster_exists; then
     echo "Applying manifests..."
     kubectl apply -f k8s/manifests.yaml
 
-    echo "Building and pushing Docker image..."
-    docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile ../
+    echo "Building and pushing Docker debug image..."
+    docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile-debug ../
     docker push localhost:${reg_port}/sample-operator:latest
 
 
@@ -100,8 +100,8 @@ done
 # 8. Install manifests
 kubectl apply -f k8s/manifests.yaml
 
-# 9. Build and push sample operator
-docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile ../
+# 9. Build and push sample operator (debug version)
+docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile-debug ../
 docker push localhost:${reg_port}/sample-operator:latest
 
 # 10. Install the operator CRDs

@@ -73,13 +73,16 @@ func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient operatortrace.TracingClient) error {
+	options := tracingreconcile.TracingOptions()
 
 	return builder.TypedControllerManagedBy[tracingtypes.RequestWithTraceID](mgr).
 		Named("sample").
-		WithOptions(tracingreconcile.TracingOptions()).
+		WithOptions(options).
 		Watches(
 			&appv1.Sample{},
-			&tracinghandler.TypedEnqueueRequestForObject[client.Object]{},
+			&tracinghandler.TypedEnqueueRequestForObject[client.Object]{
+				Scheme: r.Scheme,
+			},
 			builder.WithPredicates(
 				tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
 				predicate.ResourceVersionChangedPredicate{},

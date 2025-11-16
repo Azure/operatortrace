@@ -1,7 +1,13 @@
 cel.dev/expr v0.20.0 h1:OunBvVCfvpWlt4dN7zg3FM6TDkzOePe1+foGJ9AXeeI=
 cel.dev/expr v0.20.0/go.mod h1:MrpN08Q+lEBs+bGYdLxxHkZoUSsCp0nSKTs0nTymJgw=
-github.com/Azure/operatortrace/operatortrace-go v0.3.0 h1:F1j56mQlUEWO6wDLL00BmkI27biM9qndj3H2Of5iugE=
-github.com/Azure/operatortrace/operatortrace-go v0.3.0/go.mod h1:xNXWu1Uw2lnJRu1NDsSCo4J+0x6LZ2DWxTfWdV7YczU=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251115213448-3f26cc3449fe h1:6EwyQ/UOmcN7lDrdV7Vj9j7v2yY7Rbd4xgPWSBnTSiA=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251115213448-3f26cc3449fe/go.mod h1:Rj3ccbK4JN6It8JpQn8mx9u7WrGc5cBBdbOIR4AXGLM=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251116162154-357aaa0f047f h1:M5VMG9SIYouTRfCH5m8ZhrccxDTqENcQHgsyroLbJwo=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251116162154-357aaa0f047f/go.mod h1:Rj3ccbK4JN6It8JpQn8mx9u7WrGc5cBBdbOIR4AXGLM=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251116163812-3589d6777e3a h1:9lrgt0jSkCWjF4RkzUgT6uGXQctdcVZEL9Wf4HHbAEE=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251116163812-3589d6777e3a/go.mod h1:Rj3ccbK4JN6It8JpQn8mx9u7WrGc5cBBdbOIR4AXGLM=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251116170914-87394621939f h1:kAsP06cqCklC7HDSytyJH5c/azCnI4frKkdfziLt9nM=
+github.com/Azure/operatortrace/operatortrace-go v0.4.2-0.20251116170914-87394621939f/go.mod h1:Rj3ccbK4JN6It8JpQn8mx9u7WrGc5cBBdbOIR4AXGLM=
 github.com/antlr4-go/antlr/v4 v4.13.0 h1:lxCg3LAv+EUK6t1i0y1V6/SLeUi0eKEKdhQAlS8TVTI=
 github.com/antlr4-go/antlr/v4 v4.13.0/go.mod h1:pfChB/xh/Unjila75QW7+VU4TSnWnnk9UTnmpPaOR2g=
 github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a h1:idn718Q4B6AGu/h5Sxe66HYVdqdGu2l9Iebqhi/AEoA=
@@ -119,8 +125,6 @@ github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoG
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
 github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
-github.com/samber/lo v1.50.0 h1:XrG0xOeHs+4FQ8gJR97zDz5uOFMW7OwFWiFVzqopKgY=
-github.com/samber/lo v1.50.0/go.mod h1:RjZyNk6WSnUFRKK6EyOhsRJMqft3G+pg7dCWHQCWvsc=
 github.com/spf13/cobra v1.8.1 h1:e5/vxKd/rZsfSJMUX1agtjeTDf+qv1/JdBF8gg5k9ZM=
 github.com/spf13/cobra v1.8.1/go.mod h1:wHxEcudfqmLYa8iTfL+OuZPbBZkmvliBWKIezN3kD9Y=
 github.com/spf13/pflag v1.0.5 h1:iy+VFUOCP1a+8yFto/drg2CJ5u0yRoB7fZw3DKv/JXA=

@@ -5,17 +5,23 @@ ARG TARGETARCH
 
 WORKDIR /workspace
 
+# Copy local operatortrace-go module to match the replace directive path
+COPY operatortrace-go/ /operatortrace-go/
+
 # Copy Go Modules manifests
-COPY go.mod go.mod
-COPY go.sum go.sum
+COPY example/sample-operator/go.mod go.mod
+COPY example/sample-operator/go.sum go.sum
 RUN go mod download
 
-# Copy the go source
-COPY cmd/main.go cmd/main.go
-COPY api/ api/
-COPY internal/ internal/
+# Copy operatortrace-go to workspace for source debugging
+COPY operatortrace-go/ /workspace/operatortrace-go/
 
-RUN chown -R 65532:65532 ./cmd ./api ./internal
+# Copy the go source
+COPY example/sample-operator/cmd/main.go cmd/main.go
+COPY example/sample-operator/api/ api/
+COPY example/sample-operator/internal/ internal/
+
+RUN chown -R 65532:65532 ./cmd ./api ./internal ./operatortrace-go
 
 # Download Delve (latest stable, see https://github.com/go-delve/delve/releases)
 RUN go install github.com/go-delve/delve/cmd/dlv@latest
@@ -26,20 +32,25 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
 
 # --- Package into a minimal image and add Delve ---
 FROM gcr.io/distroless/base:debug-nonroot
-WORKDIR /
+WORKDIR /workspace
 
 # Copy binary and Delve from builder
-COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/manager /manager
 COPY --from=builder /go/bin/dlv /dlv
 
+# Copy source files for debugging (to match build paths)
 COPY --from=builder /workspace/cmd/ ./cmd/
 COPY --from=builder /workspace/api/ ./api/
 COPY --from=builder /workspace/internal/ ./internal/
+# Keep operatortrace-go at /operatortrace-go to match the build path
+COPY --from=builder /operatortrace-go/ /operatortrace-go/
 
 # Expose Delve port
 EXPOSE 40000
 
 USER 65532:65532
+
+WORKDIR /workspace
 
 # Run Delve with your Go binary in headless mode
 ENTRYPOINT ["/dlv", "exec", "/manager", "--headless", "--listen=:40000", "--api-version=2", "--accept-multiclient", "--log"]

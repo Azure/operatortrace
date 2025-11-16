@@ -108,13 +108,13 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 		return nil
 	}
 
-	addTraceAnnotations(ctx, obj, tc.options)
-	tc.Logger.Info("Updating object", "object", obj.GetName())
-
 	// Second span (producer) only for the actual mutation
 	updateSpanOpts := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindProducer)}
 	ctx, spanUpdate := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, tc.options, fmt.Sprintf("Update %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{}, updateSpanOpts...)
 	defer spanUpdate.End()
+
+	addTraceAnnotations(ctx, obj, tc.options)
+	tc.Logger.Info("Updating object", "object", obj.GetName())
 
 	// if resource version has changed, and there are no significant updates, we should do a patch instead of an update. This means probably just the traceID has changed / been removed.
 	if existingObj.GetResourceVersion() != obj.GetResourceVersion() {

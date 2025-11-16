@@ -51,8 +51,9 @@ func (b *ReconcilerBuilder[T]) Build() ctrlreconcile.TypedReconciler[tracingtype
 }
 
 func TracingOptions() controller.TypedOptions[tracingtypes.RequestWithTraceID] {
+	queue := tracingqueue.NewTracingQueue()
 	myQueueFactory := func(name string, rl workqueue.TypedRateLimiter[tracingtypes.RequestWithTraceID]) workqueue.TypedRateLimitingInterface[tracingtypes.RequestWithTraceID] {
-		return tracingqueue.NewTracingQueue()
+		return queue
 	}
 	opt := controller.TypedOptions[tracingtypes.RequestWithTraceID]{
 		NewQueue: myQueueFactory,
