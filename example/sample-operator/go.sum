@@ -1,7 +1,7 @@
 cel.dev/expr v0.20.0 h1:OunBvVCfvpWlt4dN7zg3FM6TDkzOePe1+foGJ9AXeeI=
 cel.dev/expr v0.20.0/go.mod h1:MrpN08Q+lEBs+bGYdLxxHkZoUSsCp0nSKTs0nTymJgw=
-github.com/Azure/operatortrace/operatortrace-go v0.3.0 h1:F1j56mQlUEWO6wDLL00BmkI27biM9qndj3H2Of5iugE=
-github.com/Azure/operatortrace/operatortrace-go v0.3.0/go.mod h1:xNXWu1Uw2lnJRu1NDsSCo4J+0x6LZ2DWxTfWdV7YczU=
+github.com/Azure/operatortrace/operatortrace-go v0.4.1 h1:kaRCquG0DctYcPNW34ar8ZjXzQkc228nJnrSp8OcbCg=
+github.com/Azure/operatortrace/operatortrace-go v0.4.1/go.mod h1:Rj3ccbK4JN6It8JpQn8mx9u7WrGc5cBBdbOIR4AXGLM=
 github.com/antlr4-go/antlr/v4 v4.13.0 h1:lxCg3LAv+EUK6t1i0y1V6/SLeUi0eKEKdhQAlS8TVTI=
 github.com/antlr4-go/antlr/v4 v4.13.0/go.mod h1:pfChB/xh/Unjila75QW7+VU4TSnWnnk9UTnmpPaOR2g=
 github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a h1:idn718Q4B6AGu/h5Sxe66HYVdqdGu2l9Iebqhi/AEoA=
