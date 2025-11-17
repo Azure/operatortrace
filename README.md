@@ -9,7 +9,7 @@ OperatorTrace is a lightweight library designed to facilitate tracing in Kuberne
 - Chain Reaction Tracing: Track and visualize chain reactions triggered by controller reconciles.
 - Lightweight and Easy to Use: A minimalistic library that integrates seamlessly with your existing controller code.
 
-![Reconciler showing its triggering chain to see what reconcile step caused the next reconcile step](image.png)
+![Reconciler showing its triggering chain to see what update in the 1st reconcile caused the next reconcile to trigger](image.png)
 
 ## Trademarks
 
