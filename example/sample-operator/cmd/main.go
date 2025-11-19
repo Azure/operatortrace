@@ -265,7 +265,7 @@ func main() {
 		otel.Tracer("operatortrace"),
 		logger,
 		mgr.GetScheme(),
-		operatortrace.WithIncomingTraceRelationship(operatortrace.TraceParentRelationshipParent),
+		operatortrace.WithIncomingTraceRelationship(operatortrace.TraceParentRelationshipLink),
 	)
 
 	sampleReconciler := &controller.SampleReconciler{
