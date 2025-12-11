@@ -26,6 +26,87 @@ func buildTraceParent(traceID, spanID string) string {
 func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 	pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
 
+	t.Run("custom ignored annotations are skipped", func(t *testing.T) {
+		customPred := predicates.NewTypedIgnoreAnnotationUpdatePredicate[client.Object]("skip-me", constants.DefaultTraceParentAnnotation)
+
+		oldPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v1",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+				},
+			},
+		}
+
+		newPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v2", // ignored
+					constants.DefaultTraceParentAnnotation: buildTraceParent("cccccccccccccccccccccccccccccccc", "dddddddddddddddd"),
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+
+		result := customPred.Update(updateEvent)
+		assert.False(t, result, "Expected update to be ignored when only custom ignored annotations change")
+	})
+
+	t.Run("custom predicate still ignores default trace annotations", func(t *testing.T) {
+		customPred := predicates.NewTypedIgnoreAnnotationUpdatePredicate[client.Object]("skip-me")
+
+		oldPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v1",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+				},
+			},
+		}
+
+		newPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v2", // ignored
+					constants.DefaultTraceParentAnnotation: buildTraceParent("cccccccccccccccccccccccccccccccc", "dddddddddddddddd"),
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+
+		result := customPred.Update(updateEvent)
+		assert.False(t, result, "Expected default trace annotations to remain ignored when custom keys are provided")
+	})
+
+	t.Run("changes outside custom ignores are processed", func(t *testing.T) {
+		customPred := predicates.NewTypedIgnoreAnnotationUpdatePredicate[client.Object]("skip-me")
+
+		oldPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me": "v1",
+					"other":   "value1",
+				},
+			},
+		}
+
+		newPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me": "v2",     // ignored
+					"other":   "value2", // should trigger processing
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+
+		result := customPred.Update(updateEvent)
+		assert.True(t, result, "Expected update to be processed when non-ignored annotations change")
+	})
+
 	t.Run("only trace ID and resource version annotations changed", func(t *testing.T) {
 		oldPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{

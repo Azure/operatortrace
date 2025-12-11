@@ -16,10 +16,20 @@ import (
 
 type IgnoreTraceAnnotationUpdatePredicate = TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]
 
+// NewTypedIgnoreAnnotationUpdatePredicate creates a predicate that ignores updates
+// where only the provided annotation keys change (or defaults to trace-related keys
+// when none are provided).
+func NewTypedIgnoreAnnotationUpdatePredicate[T client.Object](ignoredAnnotationKeys ...string) TypedIgnoreTraceAnnotationUpdatePredicate[T] {
+	return TypedIgnoreTraceAnnotationUpdatePredicate[T]{
+		ignoredAnnotationKeys: ignoredAnnotationKeys,
+	}
+}
+
 // IgnoreTraceAnnotationUpdatePredicate implements a predicate that ignores updates
 // where only the trace ID and span ID annotations, or resource version changes.
 type TypedIgnoreTraceAnnotationUpdatePredicate[T client.Object] struct {
 	predicate.Funcs
+	ignoredAnnotationKeys []string
 }
 
 // Create implements the create event check for the predicate.
@@ -38,13 +48,24 @@ func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Generic(e event.TypedGeneric
 }
 
 // Update implements the update event check for the predicate.
-func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEvent[T]) bool {
+func (p TypedIgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEvent[T]) bool {
 	if e.ObjectOld.DeepCopyObject() == nil || e.ObjectNew.DeepCopyObject() == nil {
 		return true
 	}
 
 	oldAnnotations := e.ObjectOld.GetAnnotations()
 	newAnnotations := e.ObjectNew.GetAnnotations()
+
+	ignoredAnnotations := append(
+		[]string{
+			constants.DefaultTraceParentAnnotation,
+			constants.DefaultTraceStateAnnotation,
+			constants.LegacyTraceIDAnnotation,
+			constants.LegacySpanIDAnnotation,
+			constants.LegacyTraceIDTimeAnnotation,
+		},
+		p.ignoredAnnotationKeys...,
+	)
 
 	// check if metadata except annotations have changed
 	labelsChanged := !equality.Semantic.DeepEqual(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels())
@@ -54,11 +75,7 @@ func (TypedIgnoreTraceAnnotationUpdatePredicate[T]) Update(e event.TypedUpdateEv
 	otherAnnotationsChanged := !equalExcept(
 		oldAnnotations,
 		newAnnotations,
-		constants.DefaultTraceParentAnnotation,
-		constants.DefaultTraceStateAnnotation,
-		constants.LegacyTraceIDAnnotation,
-		constants.LegacySpanIDAnnotation,
-		constants.LegacyTraceIDTimeAnnotation,
+		ignoredAnnotations...,
 	)
 
 	// Check if the spec or status fields have changed
