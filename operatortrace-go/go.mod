@@ -13,7 +13,6 @@ replace (
 
 require (
 	github.com/go-logr/logr v1.4.2
-	github.com/samber/lo v1.50.0
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.34.0

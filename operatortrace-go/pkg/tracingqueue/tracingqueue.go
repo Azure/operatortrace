@@ -43,13 +43,9 @@ func (tq *TracingQueue) Add(req tracingtypes.RequestWithTraceID) {
 
 	if _, found := tq.m[req.NamespacedName]; found {
 		existing := tq.m[req.NamespacedName]
-		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
-			newLinkedSpan := tracingtypes.LinkedSpan{
-				TraceID: req.Parent.TraceID,
-				SpanID:  req.Parent.SpanID,
-			}
-			appendLinkedSpan(existing, newLinkedSpan)
-		}
+		mergeRequest(existing, req)
+		// Mark dirty in underlying queue so it requeues after Done()
+		tq.queue.Add(req.NamespacedName)
 	} else {
 		tval := req // Copy, to avoid retaining the caller's pointer.
 		tq.m[req.NamespacedName] = &tval
@@ -83,13 +79,9 @@ func (tq *TracingQueue) AddRateLimited(req tracingtypes.RequestWithTraceID) {
 	// This is usually called after an error so keeping it linked to the previous span.
 	if _, found := tq.m[req.NamespacedName]; found {
 		existing := tq.m[req.NamespacedName]
-		if existing.Parent.TraceID != req.Parent.TraceID || existing.Parent.SpanID != req.Parent.SpanID {
-			newLinkedSpan := tracingtypes.LinkedSpan{
-				TraceID: req.Parent.TraceID,
-				SpanID:  req.Parent.SpanID,
-			}
-			appendLinkedSpan(existing, newLinkedSpan)
-		}
+		mergeRequest(existing, req)
+		// Mark dirty in underlying queue so it requeues after Done()
+		tq.queue.AddRateLimited(req.NamespacedName)
 	} else {
 		tval := req
 		tq.m[req.NamespacedName] = &tval
@@ -102,7 +94,8 @@ func (tq *TracingQueue) Forget(req tracingtypes.RequestWithTraceID) {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
-	if _, found := tq.m[req.NamespacedName]; found {
+	if val, found := tq.m[req.NamespacedName]; found {
+		tq.softDeleted[req.NamespacedName] = val
 		delete(tq.m, req.NamespacedName)
 		tq.queue.Forget(req.NamespacedName)
 	}
@@ -198,5 +191,31 @@ func appendLinkedSpan(req *tracingtypes.RequestWithTraceID, span tracingtypes.Li
 	if req.LinkedSpanCount < len(req.LinkedSpans) {
 		req.LinkedSpans[req.LinkedSpanCount] = span
 		req.LinkedSpanCount++
+	}
+}
+
+func mergeRequest(existing *tracingtypes.RequestWithTraceID, incoming tracingtypes.RequestWithTraceID) {
+	// Only try to promote the incoming parent if it has a valid trace context
+	if len(incoming.Parent.TraceID) > 0 && len(incoming.Parent.SpanID) > 0 {
+		incomingDiffers := existing.Parent.TraceID != incoming.Parent.TraceID ||
+			existing.Parent.SpanID != incoming.Parent.SpanID ||
+			existing.Parent.Name != incoming.Parent.Name ||
+			existing.Parent.Kind != incoming.Parent.Kind ||
+			existing.Parent.EventKind != incoming.Parent.EventKind
+		if incomingDiffers {
+			// Preserve the previous parent as a linked span before overwriting it
+			if len(existing.Parent.TraceID) > 0 || len(existing.Parent.SpanID) > 0 {
+				appendLinkedSpan(existing, tracingtypes.LinkedSpan{
+					TraceID: existing.Parent.TraceID,
+					SpanID:  existing.Parent.SpanID,
+				})
+			}
+			existing.Parent = incoming.Parent
+		}
+	}
+
+	// Merge any linked spans that came with the incoming request (e.g., retries)
+	for i := 0; i < incoming.LinkedSpanCount; i++ {
+		appendLinkedSpan(existing, incoming.LinkedSpans[i])
 	}
 }

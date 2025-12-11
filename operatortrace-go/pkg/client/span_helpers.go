@@ -6,137 +6,73 @@ package client
 
 import (
 	"context"
-	"strconv"
 	"time"
 
-	constants "github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel/trace"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// sliceFromLinkedSpans converts a slice of LinkedSpan to a slice of trace.SpanContext
+// sliceFromLinkedSpans converts a fixed array of LinkedSpan to OTEL links.
 func sliceFromLinkedSpans(linkedSpans [10]types.LinkedSpan) []trace.Link {
-	spanContexts := make([]trace.SpanContext, 0, len(linkedSpans))
+	links := make([]trace.Link, 0, len(linkedSpans))
 	for _, linkedSpan := range linkedSpans {
-		if linkedSpan.TraceID != "" && linkedSpan.SpanID != "" {
-			traceID, err := trace.TraceIDFromHex(linkedSpan.TraceID)
-			if err != nil {
-				continue
-			}
-			spanID, err := trace.SpanIDFromHex(linkedSpan.SpanID)
-			if err != nil {
-				continue
-			}
-			spanContexts = append(spanContexts, trace.NewSpanContext(trace.SpanContextConfig{
-				TraceID: traceID,
-				SpanID:  spanID,
-				Remote:  true,
-			}))
+		if linkedSpan.TraceID == "" || linkedSpan.SpanID == "" {
+			continue
 		}
-	}
-	links := make([]trace.Link, 0, len(spanContexts))
-	for _, spanContext := range spanContexts {
-		links = append(links, trace.Link{
-			SpanContext: spanContext,
-			Attributes:  nil, // No attributes are set for linked spans
-		})
+		traceID, err := trace.TraceIDFromHex(linkedSpan.TraceID)
+		if err != nil {
+			continue
+		}
+		spanID, err := trace.SpanIDFromHex(linkedSpan.SpanID)
+		if err != nil {
+			continue
+		}
+		links = append(links, trace.Link{SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: traceID,
+			SpanID:  spanID,
+			Remote:  true,
+		})})
 	}
 	return links
 }
 
-// startSpanFromContext starts a new span from the context and attaches trace information to the object
-func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.Object, scheme *runtime.Scheme, operationName string, linkedSpansArray [10]types.LinkedSpan, spanOpts ...trace.SpanStartOption) (context.Context, trace.Span) {
+// startSpanFromContext starts a new span from the context and attaches trace information to the object.
+func startSpanFromContext(ctx context.Context, logger logr.Logger, tracer trace.Tracer, obj client.Object, scheme *runtime.Scheme, opts Options, operationName string, linkedSpansArray [10]types.LinkedSpan, spanOpts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	span := trace.SpanFromContext(ctx)
 	if span.SpanContext().IsValid() {
-		ctx, span = tracer.Start(ctx, operationName, spanOpts...)
-		return ctx, span
+		return tracer.Start(ctx, operationName, spanOpts...)
 	}
 
-	if !span.SpanContext().IsValid() {
-		if obj != nil {
-			// no valid trace ID in context, check object conditions
-			if traceID, err := getConditionMessage("TraceID", obj, scheme); err == nil {
-				if traceID != "" {
-					// Check if the traceID is more than 20 minutes old, if it is, we will not use it
-					if traceIdTime, err := getConditionTime("TraceID", obj, scheme); err == nil {
-						if traceIdTime.Time.Before(metav1.Now().Add(-constants.TraceExpirationTime * time.Minute)) {
-							logger.Info("TraceID is more than " + strconv.Itoa(constants.TraceExpirationTime) + " minutes old, not using it")
-						} else {
-							if traceIDValue, err := trace.TraceIDFromHex(traceID); err == nil {
-								spanContext := trace.NewSpanContext(trace.SpanContextConfig{})
-								if spanID, err := getConditionMessage("SpanID", obj, scheme); err == nil {
-									if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
-										spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-											TraceID:    traceIDValue,
-											SpanID:     spanIDValue,
-											Remote:     true,
-											TraceFlags: trace.FlagsSampled,
-										})
-									} else {
-										spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-											TraceID:    traceIDValue,
-											Remote:     true,
-											TraceFlags: trace.FlagsSampled,
-										})
-									}
-								}
-								ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
-							}
-						}
-					}
-				}
-			} else {
-				// No valid trace ID in context, check object annotations
-				if traceID, ok := obj.GetAnnotations()[constants.TraceIDAnnotation]; ok {
-					if traceID != "" {
-						// Check if the traceID is more than 10 minutes (from constants) old, if it is, we will not use it
-						if traceIDTime, ok := obj.GetAnnotations()[constants.TraceIDTimeAnnotation]; ok {
-							if traceIdTimeValue, err := time.Parse(time.RFC3339, traceIDTime); err == nil {
-								if traceIdTimeValue.Before(time.Now().Add(-constants.TraceExpirationTime * time.Minute)) {
-									logger.Info("TraceID is more than " + strconv.Itoa(constants.TraceExpirationTime) + " minutes old, not using it")
-								} else {
-									if traceIDValue, err := trace.TraceIDFromHex(traceID); err == nil {
-										spanContext := trace.NewSpanContext(trace.SpanContextConfig{})
-										if spanID, ok := obj.GetAnnotations()[constants.SpanIDAnnotation]; ok {
-											if spanIDValue, err := trace.SpanIDFromHex(spanID); err == nil {
-												spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-													TraceID:    traceIDValue,
-													SpanID:     spanIDValue,
-													Remote:     true,
-													TraceFlags: trace.FlagsSampled,
-												})
-											} else {
-												spanContext = trace.NewSpanContext(trace.SpanContextConfig{
-													TraceID:    traceIDValue,
-													Remote:     true,
-													TraceFlags: trace.FlagsSampled,
-												})
-											}
-										}
-										ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
-									} else {
-										logger.Error(err, "Invalid trace ID", "traceID", traceID)
-									}
-								}
-							}
-						}
-					}
-				}
+	var (
+		incomingLink *trace.Link
+		applied      bool
+	)
+
+	if obj != nil {
+		if storedCtx, ok := extractTraceContextFromAnnotations(obj.GetAnnotations(), opts); ok && !traceContextExpired(storedCtx.Timestamp, opts) {
+			ctx, incomingLink = applyStoredTraceContext(ctx, storedCtx, opts, incomingLink)
+			applied = true
+		}
+		if !applied {
+			if storedCtx, ok := extractTraceContextFromConditions(obj, scheme); ok && !traceContextExpired(storedCtx.Timestamp, opts) {
+				ctx, incomingLink = applyStoredTraceContext(ctx, storedCtx, opts, incomingLink)
 			}
 		}
 	}
-	// check for linked spans
-	linkedSpans := sliceFromLinkedSpans(linkedSpansArray)
 
-	spanOpts = append(spanOpts, trace.WithLinks(linkedSpans...))
+	links := sliceFromLinkedSpans(linkedSpansArray)
+	if incomingLink != nil {
+		links = append(links, *incomingLink)
+	}
+	if len(links) > 0 {
+		spanOpts = append(spanOpts, trace.WithLinks(links...))
+	}
 
-	// Create a new span
-	ctx, span = tracer.Start(ctx, operationName, spanOpts...)
-	return ctx, span
+	return tracer.Start(ctx, operationName, spanOpts...)
 }
 
 func startSpanFromContextGeneric(ctx context.Context, logger logr.Logger, tracer trace.Tracer, operationName string) (context.Context, trace.Span) {
@@ -145,7 +81,7 @@ func startSpanFromContextGeneric(ctx context.Context, logger logr.Logger, tracer
 		spanContext := trace.NewSpanContext(trace.SpanContextConfig{
 			TraceID:    span.SpanContext().TraceID(),
 			SpanID:     span.SpanContext().SpanID(),
-			TraceFlags: trace.FlagsSampled,
+			TraceFlags: span.SpanContext().TraceFlags(),
 			Remote:     false,
 		})
 		ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
@@ -153,7 +89,52 @@ func startSpanFromContextGeneric(ctx context.Context, logger logr.Logger, tracer
 		return trace.ContextWithSpan(ctx, span), span
 	}
 
-	// Create a new span
 	ctx, span = tracer.Start(ctx, operationName)
 	return ctx, span
+}
+
+func applyStoredTraceContext(ctx context.Context, stored storedTraceContext, opts Options, incomingLink *trace.Link) (context.Context, *trace.Link) {
+	if stored.TraceParent == "" {
+		return ctx, incomingLink
+	}
+	spanContext, err := tracecontext.SpanContextFromTraceData(stored.TraceParent, stored.TraceState)
+	if err != nil {
+		return ctx, incomingLink
+	}
+
+	relationship := stored.Relationship
+	if relationship == "" {
+		relationship = opts.IncomingTraceRelationship
+	}
+
+	if relationship == TraceParentRelationshipParent {
+		ctx = trace.ContextWithRemoteSpanContext(ctx, spanContext)
+		return ctx, incomingLink
+	}
+	incomingLink = &trace.Link{SpanContext: spanContext}
+	return ctx, incomingLink
+}
+
+func extractTraceContextFromConditions(obj client.Object, scheme *runtime.Scheme) (storedTraceContext, bool) {
+	traceID, err := GetConditionMessage("TraceID", obj, scheme)
+	if err != nil || traceID == "" {
+		return storedTraceContext{}, false
+	}
+	spanID, err := GetConditionMessage("SpanID", obj, scheme)
+	if err != nil || spanID == "" {
+		return storedTraceContext{}, false
+	}
+	traceParent, err := tracecontext.TraceParentFromIDs(traceID, spanID)
+	if err != nil {
+		return storedTraceContext{}, false
+	}
+	var timestamp time.Time
+	if ts, err := GetConditionTime("TraceID", obj, scheme); err == nil {
+		timestamp = ts.Time
+	}
+	return storedTraceContext{
+		TraceParent:  traceParent,
+		Timestamp:    timestamp,
+		Relationship: TraceParentRelationshipParent,
+	}, true
 }

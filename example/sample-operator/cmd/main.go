@@ -28,6 +28,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -90,6 +91,9 @@ func initTracer(ctx context.Context) func() {
 
 	// Set the global trace provider
 	otel.SetTracerProvider(tp)
+
+	// Set the global text map propagator for W3C trace context propagation
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 
 	// Return a function to shutdown the tracer provider
 	return func() {
@@ -255,12 +259,13 @@ func main() {
 	}
 
 	// Create the tracing client
-	tracingClient := operatortrace.NewTracingClient(
+	tracingClient := operatortrace.NewTracingClientWithOptions(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		otel.Tracer("operatortrace"),
 		logger,
 		mgr.GetScheme(),
+		operatortrace.WithIncomingTraceRelationship(operatortrace.TraceParentRelationshipParent),
 	)
 
 	sampleReconciler := &controller.SampleReconciler{
@@ -270,6 +275,26 @@ func main() {
 
 	if err = sampleReconciler.SetupWithManager(mgr, tracingClient); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Sample")
+		os.Exit(1)
+	}
+
+	tracingSampleReconciler := &controller.TracingSampleReconciler{
+		Client: tracingClient,
+		Scheme: mgr.GetScheme(),
+	}
+
+	if err = tracingSampleReconciler.SetupWithManager(mgr, tracingClient); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TracingSample")
+		os.Exit(1)
+	}
+
+	tracingPingerReconciler := &controller.TracingPingerReconciler{
+		Client: tracingClient,
+		Scheme: mgr.GetScheme(),
+	}
+
+	if err = tracingPingerReconciler.SetupWithManager(mgr, tracingClient); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TracingPinger")
 		os.Exit(1)
 	}
 

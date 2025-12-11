@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
-// getConditionTime retrieves the time for a specific condition type from a Kubernetes object.
-func getConditionTime(conditionType string, obj client.Object, scheme *runtime.Scheme) (metav1.Time, error) {
+// GetConditionTime retrieves the time for a specific condition type from a Kubernetes object.
+func GetConditionTime(conditionType string, obj client.Object, scheme *runtime.Scheme) (metav1.Time, error) {
 	conditions, err := getConditionsAsMap(obj, scheme)
 	if err != nil {
 		return metav1.Time{}, err
@@ -43,8 +43,8 @@ func getConditionTime(conditionType string, obj client.Object, scheme *runtime.S
 	return metav1.Time{}, fmt.Errorf("condition of type %s not found", conditionType)
 }
 
-// getConditionMessage retrieves the message for a specific condition type from a Kubernetes object.
-func getConditionMessage(conditionType string, obj client.Object, scheme *runtime.Scheme) (string, error) {
+// GetConditionMessage retrieves the message for a specific condition type from a Kubernetes object.
+func GetConditionMessage(conditionType string, obj client.Object, scheme *runtime.Scheme) (string, error) {
 	conditions, err := getConditionsAsMap(obj, scheme)
 	if err != nil {
 		return "", err

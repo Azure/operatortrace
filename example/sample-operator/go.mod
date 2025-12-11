@@ -17,7 +17,6 @@ require (
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
-	github.com/samber/lo v1.50.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
@@ -108,3 +107,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/Azure/operatortrace/operatortrace-go => ../../operatortrace-go

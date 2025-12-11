@@ -3,9 +3,11 @@
 # It should be run by config/default
 resources:
 - bases/app.azure.microsoft.com_samples.yaml
+- bases/app.azure.microsoft.com_tracingpingers.yaml
+- bases/app.azure.microsoft.com_tracingsamples.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
-patches:
+patches: []
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
 # +kubebuilder:scaffold:crdkustomizewebhookpatch

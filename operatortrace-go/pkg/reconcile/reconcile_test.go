@@ -7,6 +7,7 @@ package reconcile
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	tracingclient "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
@@ -65,6 +66,10 @@ func setupTestClient(objects ...ctrlclient.Object) (tracingclient.TracingClient,
 	logger := logr.Discard()
 
 	return tracingclient.NewTracingClient(k8sClient, k8sClient, tracer, logger, scheme), scheme
+}
+
+func buildTraceParent(traceID, spanID string) string {
+	return fmt.Sprintf("00-%s-%s-01", traceID, spanID)
 }
 
 func TestTracingOptions(t *testing.T) {
@@ -151,8 +156,7 @@ func TestObjectReconcilerAdapter_Reconcile_Success(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				constants.TraceIDAnnotation: "test-trace-id",
-				constants.SpanIDAnnotation:  "test-span-id",
+				constants.DefaultTraceParentAnnotation: buildTraceParent("test-trace-id", "test-span-id"),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -193,8 +197,7 @@ func TestObjectReconcilerAdapter_Reconcile_WithError(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				constants.TraceIDAnnotation: "test-trace-id",
-				constants.SpanIDAnnotation:  "test-span-id",
+				constants.DefaultTraceParentAnnotation: buildTraceParent("test-trace-id", "test-span-id"),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -262,8 +265,7 @@ func TestObjectReconcilerAdapter_Reconcile_WithRequeue(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				constants.TraceIDAnnotation: "test-trace-id",
-				constants.SpanIDAnnotation:  "test-span-id",
+				constants.DefaultTraceParentAnnotation: buildTraceParent("test-trace-id", "test-span-id"),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -304,8 +306,7 @@ func TestObjectReconcilerAdapter_Reconcile_DisableEndTrace(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				constants.TraceIDAnnotation: "test-trace-id",
-				constants.SpanIDAnnotation:  "test-span-id",
+				constants.DefaultTraceParentAnnotation: buildTraceParent("test-trace-id", "test-span-id"),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -346,8 +347,7 @@ func TestObjectReconcilerAdapter_Reconcile_DisableEndTrace(t *testing.T) {
 	var updatedPod corev1.Pod
 	err = client.Get(ctx, types.NamespacedName{Name: "test-pod", Namespace: "default"}, &updatedPod)
 	require.NoError(t, err)
-	assert.Equal(t, "test-trace-id", updatedPod.Annotations[constants.TraceIDAnnotation])
-	assert.Equal(t, "test-span-id", updatedPod.Annotations[constants.SpanIDAnnotation])
+	assert.Equal(t, buildTraceParent("test-trace-id", "test-span-id"), updatedPod.Annotations[constants.DefaultTraceParentAnnotation])
 }
 
 func TestObjectReconcilerAdapter_Reconcile_WithLinkedSpans(t *testing.T) {
@@ -356,8 +356,7 @@ func TestObjectReconcilerAdapter_Reconcile_WithLinkedSpans(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				constants.TraceIDAnnotation: "test-trace-id",
-				constants.SpanIDAnnotation:  "test-span-id",
+				constants.DefaultTraceParentAnnotation: buildTraceParent("test-trace-id", "test-span-id"),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -411,8 +410,7 @@ func TestObjectReconcilerAdapter_Reconcile_WithParentInfo(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				constants.TraceIDAnnotation: "test-trace-id",
-				constants.SpanIDAnnotation:  "test-span-id",
+				constants.DefaultTraceParentAnnotation: buildTraceParent("test-trace-id", "test-span-id"),
 			},
 		},
 		Spec: corev1.PodSpec{

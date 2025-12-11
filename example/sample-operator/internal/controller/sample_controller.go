@@ -19,7 +19,10 @@ package controller
 import (
 	"context"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,7 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	appv1 "github.com/Azure/operatortrace/example/example-operator/api/v1"
-
 	operatortrace "github.com/Azure/operatortrace/operatortrace-go/pkg/client"
 	tracinghandler "github.com/Azure/operatortrace/operatortrace-go/pkg/handler"
 	tracingpredicates "github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
@@ -35,7 +37,7 @@ import (
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 )
 
-// SampleReconciler reconciles a Sample object
+// SampleReconciler reconciles a Sample object.
 type SampleReconciler struct {
 	Client operatortrace.TracingClient
 	Scheme *runtime.Scheme
@@ -44,42 +46,76 @@ type SampleReconciler struct {
 // +kubebuilder:rbac:groups=app.azure.microsoft.com,resources=samples,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=app.azure.microsoft.com,resources=samples/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=app.azure.microsoft.com,resources=samples/finalizers,verbs=update
+// +kubebuilder:rbac:groups=app.azure.microsoft.com,resources=tracingsamples,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=app.azure.microsoft.com,resources=tracingsamples/status,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Sample object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.4/pkg/reconcile
 func (r *SampleReconciler) Reconcile(ctx context.Context, obj *appv1.Sample) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithValues("sample", obj.Name)
-	log.V(1).Info("reconciling Sample")
+	logger := log.FromContext(ctx).WithValues("sample", obj.Name)
+	logger.V(1).Info("reconciling Sample")
 
-	// create a new sample object if spec.bar is less than 5, increment spec.bar
-	if obj.Spec.Bar < 5 {
-		obj.Spec.Bar++
-		log.V(1).Info("incrementing bar", "bar", obj.Spec.Bar)
-	} else {
-		log.V(1).Info("bar is greater than 5, not incrementing")
+	tracingSample := &appv1.TracingSample{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: obj.Name, Namespace: obj.Namespace}, tracingSample)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(1).Info("creating tracing sample peer")
+			tracingSample = &appv1.TracingSample{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: appv1.GroupVersion.String(),
+					Kind:       "TracingSample",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      obj.Name,
+					Namespace: obj.Namespace,
+				},
+				Spec: appv1.TracingSampleSpec{
+					Value: obj.Spec.Bar,
+				},
+			}
+			if err := r.Client.Create(ctx, tracingSample); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
 	}
-	// update the sample object
-	r.Client.Update(ctx, obj)
+
+	tracingSample.TypeMeta = metav1.TypeMeta{
+		APIVersion: appv1.GroupVersion.String(),
+		Kind:       "TracingSample",
+	}
+
+	updatedTracingSample := false
+	if tracingSample.Spec.Value < pingPongMaxValue && tracingSample.Spec.Value <= obj.Spec.Bar {
+		tracingSample.Spec.Value++
+		updatedTracingSample = true
+		logger.V(1).Info("incrementing tracing sample", "value", tracingSample.Spec.Value)
+	} else {
+		logger.V(1).Info("tracing sample has reached max or waiting for sample", "sample", obj.Spec.Bar, "tracingSample", tracingSample.Spec.Value)
+	}
+
+	if updatedTracingSample {
+		if err := r.Client.Update(ctx, tracingSample); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager, tracingClient operatortrace.TracingClient) error {
+	options := tracingreconcile.TracingOptions()
 
 	return builder.TypedControllerManagedBy[tracingtypes.RequestWithTraceID](mgr).
 		Named("sample").
-		WithOptions(tracingreconcile.TracingOptions()).
+		WithOptions(options).
 		Watches(
 			&appv1.Sample{},
-			&tracinghandler.TypedEnqueueRequestForObject[client.Object]{},
+			&tracinghandler.TypedEnqueueRequestForObject[client.Object]{
+				Scheme: r.Scheme,
+			},
 			builder.WithPredicates(
 				tracingpredicates.IgnoreTraceAnnotationUpdatePredicate{},
 				predicate.ResourceVersionChangedPredicate{},

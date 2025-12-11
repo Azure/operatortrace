@@ -17,4 +17,22 @@ resources:
   kind: Sample
   path: github.com/Azure/operatortrace/example/example-operator/api/v1
   version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: azure.microsoft.com
+  group: app
+  kind: TracingSample
+  path: github.com/Azure/operatortrace/example/example-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: azure.microsoft.com
+  group: app
+  kind: TracingPinger
+  path: github.com/Azure/operatortrace/example/example-operator/api/v1
+  version: v1
 version: "3"

@@ -4,17 +4,22 @@ ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /workspace
+# Copy local operatortrace-go module so the replace directive works
+COPY operatortrace-go/ /operatortrace-go/
+
 # Copy the Go Modules manifests
-COPY go.mod go.mod
-COPY go.sum go.sum
+COPY example/sample-operator/go.mod go.mod
+COPY example/sample-operator/go.sum go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
 # Copy the go source
-COPY cmd/main.go cmd/main.go
-COPY api/ api/
-COPY internal/ internal/
+COPY example/sample-operator/cmd/main.go cmd/main.go
+COPY example/sample-operator/api/ api/
+COPY example/sample-operator/internal/ internal/
+# Copy operatortrace-go sources for inclusion in the final image
+COPY operatortrace-go/ /workspace/operatortrace-go/
 
 # Build
 # the GOARCH has not a default value to allow the binary be built according to the host where the command
@@ -28,6 +33,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/manager .
+COPY --from=builder /operatortrace-go/ /operatortrace-go/
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]

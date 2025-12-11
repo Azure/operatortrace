@@ -7,9 +7,7 @@ package client
 import (
 	"context"
 	"testing"
-	"time"
 
-	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +45,7 @@ func TestGenericClientStartTraceAndEndTrace(t *testing.T) {
 	scheme := runtime.NewScheme()
 	corev1.AddToScheme(scheme)
 	client := NewGenericClient(tracer, logger, scheme)
+	gc := client.(*genericClient)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -58,25 +57,16 @@ func TestGenericClientStartTraceAndEndTrace(t *testing.T) {
 	ctx, span, err := client.StartTrace(ctx, pod)
 	defer span.End()
 	assert.NoError(t, err)
-	traceID := span.SpanContext().TraceID().String()
-	spanID := span.SpanContext().SpanID().String()
-
-	// Set annotations manually to simulate SetSpan
+	ctx = trace.ContextWithSpan(ctx, span)
+	addTraceAnnotations(ctx, pod, gc.options)
 	annotations := pod.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	annotations[constants.TraceIDAnnotation] = traceID
-	annotations[constants.SpanIDAnnotation] = spanID
-	annotations[constants.TraceIDTimeAnnotation] = time.Now().Format(time.RFC3339)
-	pod.SetAnnotations(annotations)
+	assert.NotEmpty(t, annotations[gc.options.EmittedTraceParentAnnotationKey()])
 
 	err = client.EndTrace(ctx, pod)
 	assert.NoError(t, err)
 	annotations = pod.GetAnnotations()
-	assert.Empty(t, annotations[constants.TraceIDAnnotation])
-	assert.Empty(t, annotations[constants.SpanIDAnnotation])
-	assert.Empty(t, annotations[constants.TraceIDTimeAnnotation])
+	assert.Empty(t, annotations[gc.options.EmittedTraceParentAnnotationKey()])
+	assert.Empty(t, annotations[gc.options.EmittedTraceStateAnnotationKey()])
 }
 
 func TestGenericClientStartSpan(t *testing.T) {
@@ -96,6 +86,7 @@ func TestGenericClientSetSpan(t *testing.T) {
 	scheme := runtime.NewScheme()
 	corev1.AddToScheme(scheme)
 	client := NewGenericClient(tracer, logger, scheme)
+	gc := client.(*genericClient)
 	ctx := context.Background()
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -106,7 +97,5 @@ func TestGenericClientSetSpan(t *testing.T) {
 	_, span := client.SetSpan(ctx, pod)
 	defer span.End()
 	annotations := pod.GetAnnotations()
-	assert.NotEmpty(t, annotations[constants.TraceIDAnnotation])
-	assert.NotEmpty(t, annotations[constants.SpanIDAnnotation])
-	assert.NotEmpty(t, annotations[constants.TraceIDTimeAnnotation])
+	assert.NotEmpty(t, annotations[gc.options.EmittedTraceParentAnnotationKey()])
 }

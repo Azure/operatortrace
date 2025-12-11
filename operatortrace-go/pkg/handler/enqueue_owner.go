@@ -29,7 +29,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -223,14 +222,13 @@ func (e *enqueueRequestForOwner[object]) getOwnerReconcileRequest(obj metav1.Obj
 				request.NamespacedName.Namespace = obj.GetNamespace()
 			}
 
-			traceId := obj.GetAnnotations()[constants.TraceIDAnnotation]
-			spanId := obj.GetAnnotations()[constants.SpanIDAnnotation]
+			traceID, spanID := traceAndSpanIDsFromAnnotations(obj.GetAnnotations())
 			senderName := obj.GetName()
 			senderKind := kind
 
-			if traceId != "" && spanId != "" {
-				request.Parent.TraceID = traceId
-				request.Parent.SpanID = spanId
+			if traceID != "" && spanID != "" {
+				request.Parent.TraceID = traceID
+				request.Parent.SpanID = spanID
 			}
 
 			request.Parent.EventKind = eventKind

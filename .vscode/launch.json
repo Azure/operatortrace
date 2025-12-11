@@ -8,9 +8,18 @@
             "mode": "remote",
             "host": "127.0.0.1",
             "port": 40000,
-            "remotePath": "",
-            "cwd": "${workspaceFolder}/example/sample-operator",
-            "trace": "log"
+            "cwd": "${workspaceFolder}",
+            "trace": "log",
+            "substitutePath": [
+                {
+                    "from": "${workspaceFolder}/example/sample-operator",
+                    "to": "/workspace"
+                },
+                {
+                    "from": "${workspaceFolder}/operatortrace-go",
+                    "to": "/operatortrace-go"
+                }
+            ]
         }
     ]
 }

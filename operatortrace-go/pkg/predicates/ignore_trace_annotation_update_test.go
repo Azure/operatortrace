@@ -9,6 +9,7 @@ import (
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/predicates"
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,17 +18,101 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
+func buildTraceParent(traceID, spanID string) string {
+	tp, _ := tracecontext.TraceParentFromIDs(traceID, spanID)
+	return tp
+}
+
 func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 	pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
+
+	t.Run("custom ignored annotations are skipped", func(t *testing.T) {
+		customPred := predicates.NewTypedIgnoreAnnotationUpdatePredicate[client.Object]("skip-me", constants.DefaultTraceParentAnnotation)
+
+		oldPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v1",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+				},
+			},
+		}
+
+		newPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v2", // ignored
+					constants.DefaultTraceParentAnnotation: buildTraceParent("cccccccccccccccccccccccccccccccc", "dddddddddddddddd"),
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+
+		result := customPred.Update(updateEvent)
+		assert.False(t, result, "Expected update to be ignored when only custom ignored annotations change")
+	})
+
+	t.Run("custom predicate still ignores default trace annotations", func(t *testing.T) {
+		customPred := predicates.NewTypedIgnoreAnnotationUpdatePredicate[client.Object]("skip-me")
+
+		oldPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v1",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+				},
+			},
+		}
+
+		newPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me":                              "v2", // ignored
+					constants.DefaultTraceParentAnnotation: buildTraceParent("cccccccccccccccccccccccccccccccc", "dddddddddddddddd"),
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+
+		result := customPred.Update(updateEvent)
+		assert.False(t, result, "Expected default trace annotations to remain ignored when custom keys are provided")
+	})
+
+	t.Run("changes outside custom ignores are processed", func(t *testing.T) {
+		customPred := predicates.NewTypedIgnoreAnnotationUpdatePredicate[client.Object]("skip-me")
+
+		oldPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me": "v1",
+					"other":   "value1",
+				},
+			},
+		}
+
+		newPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"skip-me": "v2",     // ignored
+					"other":   "value2", // should trigger processing
+				},
+			},
+		}
+
+		updateEvent := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+
+		result := customPred.Update(updateEvent)
+		assert.True(t, result, "Expected update to be processed when non-ignored annotations change")
+	})
 
 	t.Run("only trace ID and resource version annotations changed", func(t *testing.T) {
 		oldPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation:     "old-trace-id",
-					constants.SpanIDAnnotation:      "old-span-id",
-					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
-					"key1":                          "value1",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+					"key1":                                 "value1",
 				},
 				Generation:      1,
 				ResourceVersion: "old-resource-version",
@@ -40,10 +125,8 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		newPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation:     "new-trace-id",
-					constants.SpanIDAnnotation:      "new-span-id",
-					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:28Z",
-					"key1":                          "value1",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("cccccccccccccccccccccccccccccccc", "dddddddddddddddd"),
+					"key1":                                 "value1",
 				},
 				Generation:      2,
 				ResourceVersion: "new-resource-version",
@@ -66,10 +149,8 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		oldPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation:     "old-trace-id",
-					constants.SpanIDAnnotation:      "old-span-id",
-					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
-					"key1":                          "value1",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "ffffffffffffffff"),
+					"key1":                                 "value1",
 				},
 				Generation:      1,
 				ResourceVersion: "old-resource-version",
@@ -79,10 +160,8 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		newPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation:     "old-trace-id",
-					constants.SpanIDAnnotation:      "old-span-id",
-					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
-					"key1":                          "new-value",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "ffffffffffffffff"),
+					"key1":                                 "value2",
 				},
 				Generation:      2,
 				ResourceVersion: "new-resource-version",
@@ -220,9 +299,7 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		oldNodeIdentity := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation:     "4d209ecc96386aaaaa38e9d2a1f7cf1a",
-					constants.SpanIDAnnotation:      "bfe57da3ab276317",
-					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:26Z",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("4d209ecc96386aaaaa38e9d2a1f7cf1a", "bfe57da3ab276317"),
 				},
 				ResourceVersion: "778549",
 			},
@@ -231,9 +308,7 @@ func TestIgnoreTraceAnnotationUpdatePredicate(t *testing.T) {
 		newNodeIdentity := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					constants.TraceIDAnnotation:     "4d209ecc96386aaaaa38e9d2a1f7cf1a",
-					constants.SpanIDAnnotation:      "133fcd43b378545b",
-					constants.TraceIDTimeAnnotation: "2025-04-21T19:16:27Z",
+					constants.DefaultTraceParentAnnotation: buildTraceParent("4d209ecc96386aaaaa38e9d2a1f7cf1a", "133fcd43b378545b"),
 				},
 				ResourceVersion: "783399",
 			},

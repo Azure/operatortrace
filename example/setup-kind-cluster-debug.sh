@@ -19,8 +19,8 @@ if cluster_exists; then
     echo "Applying manifests..."
     kubectl apply -f k8s/manifests.yaml
 
-    echo "Building and pushing Docker image..."
-    docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile ../
+    echo "Building and pushing Docker debug image..."
+    docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile-debug ../
     docker push localhost:${reg_port}/sample-operator:latest
 
 
@@ -29,7 +29,7 @@ if cluster_exists; then
 
     cd sample-operator && make manifests && make install && make deploy
 
-    kubectl apply -f config/samples/app_v1_sample.yaml
+    kubectl apply -f sample-operator/config/samples/app_v1_sample.yaml
 
     exit 0
 fi
@@ -92,7 +92,7 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 # 7. Wait for cert manager to be ready
 echo "Waiting for cert-manager to be ready..."
-while ! kubectl wait --for=condition=available --timeout=60s deployment/cert-manager deployment/cert-manager-webhook -n cert-manager; do
+while ! kubectl wait --for=condition=available --timeout=60s deployment/cert-manager -n cert-manager; do
   echo "Waiting for cert-manager to be ready..."
   sleep 5
 done
@@ -100,8 +100,8 @@ done
 # 8. Install manifests
 kubectl apply -f k8s/manifests.yaml
 
-# 9. Build and push sample operator
-docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile ../
+# 9. Build and push sample operator (debug version)
+docker build -t localhost:${reg_port}/sample-operator:latest -f sample-operator/Dockerfile-debug ../
 docker push localhost:${reg_port}/sample-operator:latest
 
 # 10. Install the operator CRDs

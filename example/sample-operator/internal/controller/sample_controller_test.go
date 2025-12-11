@@ -77,12 +77,13 @@ var _ = Describe("Sample Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource via tracing wrapper")
 			tracer := otelnoop.NewTracerProvider().Tracer("test-tracer")
-			tracingClient := operatortrace.NewTracingClient(
+			tracingClient := operatortrace.NewTracingClientWithOptions(
 				k8sClient,
 				k8sClient,
 				tracer,
 				logr.Discard(),
 				k8sClient.Scheme(),
+				operatortrace.WithIncomingTraceRelationship(operatortrace.TraceParentRelationshipParent),
 			)
 
 			sampleReconciler := &SampleReconciler{
