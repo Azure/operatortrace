@@ -58,17 +58,20 @@ func (tq *TracingQueue) AddAfter(req tracingtypes.RequestWithTraceID, duration t
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 
-	if _, found := tq.m[req.NamespacedName]; !found {
-		// Don't link to any previous span
+	if existing, found := tq.m[req.NamespacedName]; found {
+		// Merge new metadata (including a newer parent) but keep existing links/parent unless changed.
+		mergeRequest(existing, req)
+	} else {
+		// First enqueue for this key: start clean to avoid linking to older spans.
 		tval := req
 		req.LinkedSpanCount = 0
-		req.LinkedSpans = [10]tracingtypes.LinkedSpan{} // Reset linked spans
+		req.LinkedSpans = [10]tracingtypes.LinkedSpan{}
 		req.Parent = tracingtypes.RequestParent{}
 		tq.m[req.NamespacedName] = &tval
-		tq.queue.AddAfter(req.NamespacedName, duration)
 	}
 
-	// If the request already exists, we do not update it here.
+	// Always schedule the delayed enqueue, even if the key is already present, to match workqueue semantics.
+	tq.queue.AddAfter(req.NamespacedName, duration)
 }
 
 // AddRateLimited adds or merges a tracing request into the queue, deduping by key, with rate limiting.
@@ -110,9 +113,7 @@ func (tq *TracingQueue) Len() int {
 
 // NumRequeues returns the number of requeues for a given request.
 func (tq *TracingQueue) NumRequeues(req tracingtypes.RequestWithTraceID) int {
-	// Since we are using a map to store the requests, we don't track requeues.
-	// This is a no-op in this implementation.
-	return 0
+	return tq.queue.NumRequeues(req.NamespacedName)
 }
 
 // ShutDownWithDrain stops accepting new work and drains the queue.
