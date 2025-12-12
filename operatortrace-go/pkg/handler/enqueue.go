@@ -59,6 +59,10 @@ type EnqueueRequestForObject = TypedEnqueueRequestForObject[client.Object]
 type TypedEnqueueRequestForObject[object client.Object] struct {
 	// Scheme is used to determine the GVK for the object
 	Scheme *runtime.Scheme
+
+	// AnnotationConfig overrides which annotation keys are read for trace context.
+	// If nil, defaults to the operatortrace default keys.
+	AnnotationConfig *tracecontext.AnnotationExtractionConfig
 }
 
 // Create implements EventHandler.
@@ -110,7 +114,7 @@ func isNil(arg any) bool {
 }
 
 func (e *TypedEnqueueRequestForObject[T]) objectToRequestWithTraceID(obj client.Object, eventKind string) tracingtypes.RequestWithTraceID {
-	traceID, spanID := traceAndSpanIDsFromAnnotations(obj.GetAnnotations())
+	traceID, spanID := traceAndSpanIDsFromAnnotations(obj.GetAnnotations(), e.annotationConfig())
 	if (traceID == "" || spanID == "") && e.Scheme != nil {
 		if condTraceID, condSpanID := traceAndSpanIDsFromStatus(obj, e.Scheme); condTraceID != "" && condSpanID != "" {
 			traceID, spanID = condTraceID, condSpanID
@@ -144,15 +148,24 @@ func (e *TypedEnqueueRequestForObject[T]) objectToRequestWithTraceID(obj client.
 	}
 }
 
-var defaultAnnotationExtractionConfig = tracecontext.AnnotationExtractionConfig{
-	TraceParentKey:   constants.DefaultTraceParentAnnotation,
-	TraceStateKey:    constants.DefaultTraceStateAnnotation,
-	LegacyTraceIDKey: constants.LegacyTraceIDAnnotation,
-	LegacySpanIDKey:  constants.LegacySpanIDAnnotation,
+func (e *TypedEnqueueRequestForObject[T]) annotationConfig() tracecontext.AnnotationExtractionConfig {
+	if e.AnnotationConfig != nil {
+		return *e.AnnotationConfig
+	}
+	return defaultAnnotationExtractionConfig()
 }
 
-func traceAndSpanIDsFromAnnotations(annotations map[string]string) (string, string) {
-	tc, found := tracecontext.ExtractTraceContextFromAnnotations(annotations, defaultAnnotationExtractionConfig)
+func defaultAnnotationExtractionConfig() tracecontext.AnnotationExtractionConfig {
+	return tracecontext.AnnotationExtractionConfig{
+		TraceParentKey:   constants.DefaultTraceParentAnnotation,
+		TraceStateKey:    constants.DefaultTraceStateAnnotation,
+		LegacyTraceIDKey: constants.LegacyTraceIDAnnotation,
+		LegacySpanIDKey:  constants.LegacySpanIDAnnotation,
+	}
+}
+
+func traceAndSpanIDsFromAnnotations(annotations map[string]string, cfg tracecontext.AnnotationExtractionConfig) (string, string) {
+	tc, found := tracecontext.ExtractTraceContextFromAnnotations(annotations, cfg)
 	if !found {
 		return "", ""
 	}

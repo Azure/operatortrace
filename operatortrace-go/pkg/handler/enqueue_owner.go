@@ -29,6 +29,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
 	tracingtypes "github.com/Azure/operatortrace/operatortrace-go/pkg/types"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -94,8 +95,16 @@ func OnlyControllerOwner() OwnerOption {
 	}
 }
 
+// WithAnnotationExtractionConfig overrides which annotation keys are read for trace context when enqueueing owners.
+func WithAnnotationExtractionConfig(cfg tracecontext.AnnotationExtractionConfig) OwnerOption {
+	return func(e enqueueRequestForOwnerInterface) {
+		e.setAnnotationConfig(cfg)
+	}
+}
+
 type enqueueRequestForOwnerInterface interface {
 	setIsController(bool)
+	setAnnotationConfig(tracecontext.AnnotationExtractionConfig)
 }
 
 type enqueueRequestForOwner[object client.Object] struct {
@@ -113,10 +122,24 @@ type enqueueRequestForOwner[object client.Object] struct {
 
 	// scheme is used to get the GroupVersionKind of the object
 	scheme *runtime.Scheme
+
+	// annotationConfig allows callers to override which annotations to read for trace context.
+	annotationCfg *tracecontext.AnnotationExtractionConfig
 }
 
 func (e *enqueueRequestForOwner[object]) setIsController(isController bool) {
 	e.isController = isController
+}
+
+func (e *enqueueRequestForOwner[object]) setAnnotationConfig(cfg tracecontext.AnnotationExtractionConfig) {
+	e.annotationCfg = &cfg
+}
+
+func (e *enqueueRequestForOwner[object]) annotationConfig() tracecontext.AnnotationExtractionConfig {
+	if e.annotationCfg != nil {
+		return *e.annotationCfg
+	}
+	return defaultAnnotationExtractionConfig()
 }
 
 // Create implements EventHandler.
@@ -222,7 +245,7 @@ func (e *enqueueRequestForOwner[object]) getOwnerReconcileRequest(obj metav1.Obj
 				request.NamespacedName.Namespace = obj.GetNamespace()
 			}
 
-			traceID, spanID := traceAndSpanIDsFromAnnotations(obj.GetAnnotations())
+			traceID, spanID := traceAndSpanIDsFromAnnotations(obj.GetAnnotations(), e.annotationConfig())
 			senderName := obj.GetName()
 			senderKind := kind
 
