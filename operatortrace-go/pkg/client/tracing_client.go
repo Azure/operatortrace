@@ -211,16 +211,25 @@ func (tc *tracingClient) StartTrace(ctx context.Context, requestWithTraceID *tra
 	return trace.ContextWithSpan(ctx, span), span, err
 }
 
-// Ends the trace by clearing the traceid from the object
+// EndTrace removes owned trace annotations and legacy tracing conditions.
+// It skips unnecessary reads and status writes, and returns read or patch errors.
+// Legacy condition cleanup uses optimistic locking to preserve concurrent status changes.
 func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts ...client.PatchOption) error {
 	ctx, span := startSpanFromContext(ctx, tc.Logger, tc.Tracer, obj, tc.scheme, tc.options, fmt.Sprintf("EndTrace %s %s", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName()), [10]tracingtypes.LinkedSpan{})
 	defer span.End()
 
-	annotations := obj.GetAnnotations()
+	annotationPatch, err := traceAnnotationRemovalPatch(obj.GetAnnotations(), tc.options)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+	if annotationPatch == nil && !hasLegacyTraceConditions(obj, tc.scheme) {
+		return nil
+	}
 
 	// get the current object and ensure that current object has the expected traceid and spanid annotations
 	currentObjFromServer := obj.DeepCopyObject().(client.Object)
-	err := tc.Reader.Get(ctx, client.ObjectKeyFromObject(obj), currentObjFromServer)
+	err = tc.Reader.Get(ctx, client.ObjectKeyFromObject(obj), currentObjFromServer)
 
 	if err != nil {
 		span.RecordError(err)
@@ -236,11 +245,7 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 		return nil
 	}
 
-	annotationPatch, err := traceAnnotationRemovalPatch(annotations, tc.options)
-	if err != nil {
-		span.RecordError(err)
-		return err
-	}
+	statusObj := currentObjFromServer
 	if annotationPatch != nil {
 		tc.Logger.Info("Patching object", "object", obj.GetName())
 		err = tc.Client.Patch(ctx, obj, annotationPatch, opts...)
@@ -248,24 +253,25 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 			span.RecordError(err)
 			return err
 		}
+		statusObj = obj
 	}
 
-	if !hasLegacyTraceConditions(obj, tc.scheme) {
+	if !hasLegacyTraceConditions(statusObj, tc.scheme) {
 		return nil
 	}
 
-	original := obj.DeepCopyObject().(client.Object)
+	original := statusObj.DeepCopyObject().(client.Object)
 	// remove the traceid and spanid conditions from the object and create a status().patch
 	for _, conditionType := range []string{"TraceID", "SpanID"} {
-		if err := deleteConditionAsMap(conditionType, obj, tc.scheme); err != nil {
+		if err := deleteConditionAsMap(conditionType, statusObj, tc.scheme); err != nil {
 			span.RecordError(err)
 			return err
 		}
 	}
-	patch := client.MergeFrom(original)
+	patch := client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})
 
 	tc.Logger.Info("Patching object status", "object", obj.GetName())
-	err = tc.Client.Status().Patch(ctx, obj, patch)
+	err = tc.Client.Status().Patch(ctx, statusObj, patch)
 
 	if err != nil {
 		span.RecordError(err)

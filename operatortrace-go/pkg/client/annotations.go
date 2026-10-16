@@ -7,6 +7,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"time"
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
@@ -162,16 +163,14 @@ func pruneLegacyTraceAnnotations(annotations map[string]string, opts Options) {
 	delete(annotations, opts.legacyTraceTimeAnnotationKey())
 }
 
+// traceAnnotationRemovalPatch deletes only keys cleared by normal trace persistence.
+// It leaves the input unchanged and returns nil when no owned keys are present.
 func traceAnnotationRemovalPatch(annotations map[string]string, opts Options) (client.Patch, error) {
+	remaining := maps.Clone(annotations)
+	persistTraceCarrier(remaining, opts, "", "")
 	removed := map[string]interface{}{}
-	for _, key := range []string{
-		opts.emittedTraceParentAnnotationKey(),
-		opts.emittedTraceStateAnnotationKey(),
-		opts.legacyTraceIDAnnotationKey(),
-		opts.legacySpanIDAnnotationKey(),
-		opts.legacyTraceTimeAnnotationKey(),
-	} {
-		if _, exists := annotations[key]; exists {
+	for key := range annotations {
+		if _, keep := remaining[key]; !keep {
 			removed[key] = nil
 		}
 	}

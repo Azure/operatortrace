@@ -788,9 +788,14 @@ func TestEndTraceRemovesOnlyOwnedAnnotations(t *testing.T) {
 			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 				Name: "test-pod", Namespace: "default", Annotations: test.annotations,
 			}}
+			readCalls := 0
 			patchCalls := 0
 			var patchBody map[string]interface{}
 			k8sClient := fake.NewClientBuilder().WithObjects(pod).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					readCalls++
+					return underlying.Get(ctx, key, obj, opts...)
+				},
 				Patch: func(ctx context.Context, underlying client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
 					patchCalls++
 					assert.Equal(t, types.MergePatchType, patch.Type())
@@ -811,6 +816,11 @@ func TestEndTraceRemovesOnlyOwnedAnnotations(t *testing.T) {
 			obj := pod.DeepCopy()
 
 			require.NoError(t, tracingClient.EndTrace(ctx, obj))
+			if len(test.removedKeys) == 0 {
+				assert.Zero(t, readCalls)
+			} else {
+				assert.Equal(t, 1, readCalls)
+			}
 
 			final := &corev1.Pod{}
 			require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), final))
@@ -899,6 +909,79 @@ func TestEndTraceStatusCleanup(t *testing.T) {
 					assert.Equal(t, test.wantConditions, pod.Status.Conditions)
 				}
 			}
+		})
+	}
+}
+
+func TestEndTracePreservesConcurrentConditions(t *testing.T) {
+	traceID := corev1.PodCondition{Type: "TraceID", Status: corev1.ConditionUnknown, Message: testTraceIDHex}
+	ready := corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionTrue}
+	tests := []struct {
+		name                 string
+		traceAnnotations     bool
+		concurrentBeforeRead bool
+	}{
+		{name: "fresh conditions without metadata patch", concurrentBeforeRead: true},
+		{name: "fresh conditions with metadata patch", traceAnnotations: true, concurrentBeforeRead: true},
+		{name: "conflict without metadata patch"},
+		{name: "conflict with metadata patch", traceAnnotations: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod", Namespace: "default", Annotations: map[string]string{"example.com/keep": "value"},
+				},
+				Status: corev1.PodStatus{Conditions: []corev1.PodCondition{traceID}},
+			}
+			if test.traceAnnotations {
+				annotateObjectWithTraceIDs(t, pod, newOptions(), testTraceIDHex, testSpanIDHex)
+			}
+			caller := pod.DeepCopy()
+			addReady := func(underlying client.Client) {
+				fresh := &corev1.Pod{}
+				require.NoError(t, underlying.Get(ctx, client.ObjectKeyFromObject(pod), fresh))
+				fresh.Status.Conditions = append(fresh.Status.Conditions, ready)
+				require.NoError(t, underlying.Status().Update(ctx, fresh))
+			}
+			statusWrites := 0
+			k8sClient := fake.NewClientBuilder().WithObjects(pod).WithInterceptorFuncs(interceptor.Funcs{
+				SubResourcePatch: func(ctx context.Context, underlying client.Client, subResource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+					statusWrites++
+					data, err := patch.Data(obj)
+					require.NoError(t, err)
+					var body map[string]interface{}
+					require.NoError(t, json.Unmarshal(data, &body))
+					metadata, _ := body["metadata"].(map[string]interface{})
+					assert.NotEmpty(t, metadata["resourceVersion"])
+					if !test.concurrentBeforeRead {
+						addReady(underlying)
+					}
+					return underlying.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+				},
+			}).Build()
+			if test.concurrentBeforeRead {
+				addReady(k8sClient)
+			}
+			tracingClient := NewTracingClient(k8sClient, k8sClient, initTracer(), logr.Discard())
+
+			err := tracingClient.EndTrace(ctx, caller)
+
+			if test.concurrentBeforeRead {
+				require.NoError(t, err)
+			} else {
+				require.True(t, apierrors.IsConflict(err), "expected a resourceVersion conflict, got %v", err)
+			}
+			assert.Equal(t, 1, statusWrites)
+			final := &corev1.Pod{}
+			require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), final))
+			if test.concurrentBeforeRead {
+				assert.Equal(t, []corev1.PodCondition{ready}, final.Status.Conditions)
+			} else {
+				assert.Equal(t, []corev1.PodCondition{traceID, ready}, final.Status.Conditions)
+			}
+			assert.Equal(t, "value", final.Annotations["example.com/keep"])
 		})
 	}
 }

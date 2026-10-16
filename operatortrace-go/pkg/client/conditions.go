@@ -92,6 +92,7 @@ func setConditionMessage(conditionType, message string, obj client.Object, schem
 	return setConditionsFromMap(obj, conditions, scheme)
 }
 
+// hasLegacyTraceConditions identifies trace conditions that require status cleanup.
 func hasLegacyTraceConditions(obj client.Object, scheme *runtime.Scheme) bool {
 	conditions, err := getConditionsAsMap(obj, scheme)
 	if err != nil {
