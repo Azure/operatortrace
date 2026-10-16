@@ -6,6 +6,8 @@ package client
 
 import (
 	"context"
+	"encoding/json"
+	"maps"
 	"time"
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/constants"
@@ -14,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -158,6 +161,29 @@ func pruneLegacyTraceAnnotations(annotations map[string]string, opts Options) {
 	delete(annotations, opts.legacyTraceIDAnnotationKey())
 	delete(annotations, opts.legacySpanIDAnnotationKey())
 	delete(annotations, opts.legacyTraceTimeAnnotationKey())
+}
+
+// traceAnnotationRemovalPatch deletes only keys cleared by normal trace persistence.
+// It leaves the input unchanged and returns nil when no owned keys are present.
+func traceAnnotationRemovalPatch(annotations map[string]string, opts Options) (client.Patch, error) {
+	remaining := maps.Clone(annotations)
+	persistTraceCarrier(remaining, opts, "", "")
+	removed := map[string]interface{}{}
+	for key := range annotations {
+		if _, keep := remaining[key]; !keep {
+			removed[key] = nil
+		}
+	}
+	if len(removed) == 0 {
+		return nil, nil
+	}
+	data, err := json.Marshal(map[string]interface{}{
+		"metadata": map[string]interface{}{"annotations": removed},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client.RawPatch(types.MergePatchType, data), nil
 }
 
 func traceContextExpired(ts time.Time, opts Options) bool {

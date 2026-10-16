@@ -14,9 +14,93 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
+
+type unconvertibleObject struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Unsupported       chan string `json:"unsupported"`
+}
+
+func (obj *unconvertibleObject) DeepCopyObject() runtime.Object {
+	copy := *obj
+	copy.ObjectMeta = *obj.ObjectMeta.DeepCopy()
+	return &copy
+}
+
+func TestInspectionFailuresDoNotSuppressUpdates(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  client.Object
+	}{
+		{name: "conversion failure", obj: &unconvertibleObject{Unsupported: make(chan string)}},
+		{name: "conditions are not a list", obj: &unstructured.Unstructured{Object: map[string]interface{}{
+			"status": map[string]interface{}{"conditions": "invalid"},
+		}}},
+		{name: "condition type is not a string", obj: &unstructured.Unstructured{Object: map[string]interface{}{
+			"status": map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": int64(1)}}},
+		}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			oldObj := test.obj.DeepCopyObject().(client.Object)
+			newObj := test.obj.DeepCopyObject().(client.Object)
+			_, err := predicates.HasSignificantUpdateWithError(oldObj, newObj)
+			assert.Error(t, err)
+			assert.True(t, predicates.HasSignificantUpdate(oldObj, newObj))
+			pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
+			assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}))
+		})
+	}
+}
+
+func TestOrdinaryConditionsDoNotForceSignificantUpdates(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions []interface{}
+	}{
+		{name: "type-less condition", conditions: []interface{}{map[string]interface{}{"message": "custom state"}}},
+		{name: "scalar condition", conditions: []interface{}{"custom state"}},
+		{name: "mixed trace and ordinary conditions", conditions: []interface{}{
+			map[string]interface{}{"message": "custom state"},
+			"scalar state",
+			map[string]interface{}{"type": "TraceID", "message": "trace"},
+			map[string]interface{}{"type": "SpanID", "message": "span"},
+		}},
+	}
+	for _, test := range tests {
+		for _, change := range []string{"identical", "trace annotations only", "ordinary condition changed"} {
+			t.Run(test.name+"/"+change, func(t *testing.T) {
+				oldObj := &unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "example.com/v1", "kind": "Example",
+					"status": map[string]interface{}{"conditions": test.conditions},
+				}}
+				newObj := oldObj.DeepCopy()
+				if change == "trace annotations only" {
+					newObj.SetAnnotations(map[string]string{
+						constants.DefaultTraceParentAnnotation: buildTraceParent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+					})
+				}
+				wantChanged := change == "ordinary condition changed"
+				if wantChanged {
+					conditions, _, err := unstructured.NestedSlice(newObj.Object, "status", "conditions")
+					assert.NoError(t, err)
+					assert.NoError(t, unstructured.SetNestedSlice(newObj.Object, append(conditions, "new ordinary state"), "status", "conditions"))
+				}
+				changed, err := predicates.HasSignificantUpdateWithError(oldObj, newObj)
+				assert.NoError(t, err)
+				assert.Equal(t, wantChanged, changed)
+				assert.Equal(t, wantChanged, predicates.HasSignificantUpdate(oldObj, newObj))
+				pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
+				assert.Equal(t, wantChanged, pred.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}))
+			})
+		}
+	}
+}
 
 func buildTraceParent(traceID, spanID string) string {
 	tp, _ := tracecontext.TraceParentFromIDs(traceID, spanID)

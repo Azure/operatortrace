@@ -5,6 +5,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -12,6 +13,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+)
+
+var (
+	errNoStatusField     = errors.New("status field not found")
+	errNoConditionsField = errors.New("conditions field not found")
 )
 
 // GetConditionTime retrieves the time for a specific condition type from a Kubernetes object.
@@ -74,7 +80,9 @@ func GetConditionMessage(conditionType string, obj client.Object, scheme *runtim
 
 // setConditionMessage sets the message for a specific condition type in a Kubernetes object.
 func setConditionMessage(conditionType, message string, obj client.Object, scheme *runtime.Scheme) error {
-	deleteConditionAsMap(conditionType, obj, scheme)
+	if err := deleteConditionAsMap(conditionType, obj, scheme); err != nil {
+		return fmt.Errorf("failed to remove prior %s condition: %w", conditionType, err)
+	}
 
 	conditions, err := getConditionsAsMap(obj, scheme)
 	if err != nil {
@@ -90,6 +98,27 @@ func setConditionMessage(conditionType, message string, obj client.Object, schem
 	conditions = append(conditions, newCondition)
 
 	return setConditionsFromMap(obj, conditions, scheme)
+}
+
+// hasLegacyTraceConditions distinguishes absent legacy conditions from inspection failures.
+func hasLegacyTraceConditions(obj client.Object, scheme *runtime.Scheme) (bool, error) {
+	conditions, err := getConditionsAsMap(obj, scheme)
+	if err != nil {
+		if errors.Is(err, errNoStatusField) || errors.Is(err, errNoConditionsField) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, condition := range conditions {
+		conditionType, err := convertToString(condition["Type"])
+		if err != nil {
+			return false, fmt.Errorf("failed to inspect condition type: %w", err)
+		}
+		if conditionType == "TraceID" || conditionType == "SpanID" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func deleteConditionAsMap(conditionType string, obj client.Object, scheme *runtime.Scheme) error {
@@ -140,12 +169,12 @@ func getConditionsAsMap(obj client.Object, scheme *runtime.Scheme) ([]map[string
 	val := reflect.ValueOf(objTyped)
 	statusField := val.Elem().FieldByName("Status")
 	if !statusField.IsValid() {
-		return nil, fmt.Errorf("status field not found in kind %s", gvk.Kind)
+		return nil, fmt.Errorf("%w in kind %s", errNoStatusField, gvk.Kind)
 	}
 
 	conditionsField := statusField.FieldByName("Conditions")
 	if !conditionsField.IsValid() {
-		return nil, fmt.Errorf("conditions field not found in kind %s", gvk.Kind)
+		return nil, fmt.Errorf("%w in kind %s", errNoConditionsField, gvk.Kind)
 	}
 
 	conditionsValue := conditionsField.Interface()
