@@ -56,7 +56,10 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 		return err
 	}
 
-	if !predicates.HasSignificantUpdate(existingObj, obj) {
+	if changed, err := predicates.HasSignificantUpdateWithError(existingObj, obj); err != nil {
+		spanPrepare.RecordError(err)
+		ts.Logger.Error(err, "Unable to compare objects, continuing status update", "object", obj.GetName())
+	} else if !changed {
 		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
@@ -66,8 +69,7 @@ func (ts *tracingStatusClient) Update(ctx context.Context, obj client.Object, op
 	ctx, spanUpdate := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, ts.options, fmt.Sprintf("StatusUpdate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{}, updateSpanOpts...)
 	defer spanUpdate.End()
 
-	setConditionMessage("TraceID", spanUpdate.SpanContext().TraceID().String(), obj, ts.scheme)
-	setConditionMessage("SpanID", spanUpdate.SpanContext().SpanID().String(), obj, ts.scheme)
+	ts.setTraceConditions(obj, spanUpdate)
 
 	ts.Logger.Info("updating status object", "object", obj.GetName())
 	err = ts.StatusWriter.Update(ctx, obj, opts...)
@@ -94,7 +96,10 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 		return err
 	}
 
-	if !predicates.HasSignificantUpdate(existingObj, obj) {
+	if changed, err := predicates.HasSignificantUpdateWithError(existingObj, obj); err != nil {
+		spanPrepare.RecordError(err)
+		ts.Logger.Error(err, "Unable to compare objects, continuing status patch", "object", obj.GetName())
+	} else if !changed {
 		ts.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
@@ -104,8 +109,7 @@ func (ts *tracingStatusClient) Patch(ctx context.Context, obj client.Object, pat
 	ctx, spanPatch := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, ts.options, fmt.Sprintf("StatusPatch %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{}, patchSpanOpts...)
 	defer spanPatch.End()
 
-	setConditionMessage("TraceID", spanPatch.SpanContext().TraceID().String(), obj, ts.scheme)
-	setConditionMessage("SpanID", spanPatch.SpanContext().SpanID().String(), obj, ts.scheme)
+	ts.setTraceConditions(obj, spanPatch)
 
 	ts.Logger.Info("patching status object", "object", obj.GetName())
 	err = ts.StatusWriter.Patch(ctx, obj, patch, opts...)
@@ -129,8 +133,7 @@ func (ts *tracingStatusClient) Create(ctx context.Context, obj client.Object, su
 	ctx, spanCreate := startSpanFromContext(ctx, ts.Logger, ts.Tracer, obj, ts.scheme, ts.options, fmt.Sprintf("StatusCreate %s %s", kind, obj.GetName()), [10]tracingtypes.LinkedSpan{}, createSpanOpts...)
 	defer spanCreate.End()
 
-	setConditionMessage("TraceID", spanCreate.SpanContext().TraceID().String(), obj, ts.scheme)
-	setConditionMessage("SpanID", spanCreate.SpanContext().SpanID().String(), obj, ts.scheme)
+	ts.setTraceConditions(obj, spanCreate)
 
 	ts.Logger.Info("creating status object", "object", obj.GetName())
 	err = ts.StatusWriter.Create(ctx, obj, subResource, opts...)
@@ -138,4 +141,17 @@ func (ts *tracingStatusClient) Create(ctx context.Context, obj client.Object, su
 		spanCreate.RecordError(err)
 	}
 	return err
+}
+
+// setTraceConditions keeps instrumentation failures observable without dropping status writes.
+func (ts *tracingStatusClient) setTraceConditions(obj client.Object, span trace.Span) {
+	for _, condition := range []struct{ kind, message string }{
+		{"TraceID", span.SpanContext().TraceID().String()},
+		{"SpanID", span.SpanContext().SpanID().String()},
+	} {
+		if err := setConditionMessage(condition.kind, condition.message, obj, ts.scheme); err != nil {
+			span.RecordError(err)
+			ts.Logger.Error(err, "Unable to set trace condition, continuing status write", "object", obj.GetName(), "condition", condition.kind)
+		}
+	}
 }

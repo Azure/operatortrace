@@ -14,9 +14,52 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
+
+type unconvertibleObject struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Unsupported       chan string `json:"unsupported"`
+}
+
+func (obj *unconvertibleObject) DeepCopyObject() runtime.Object {
+	copy := *obj
+	copy.ObjectMeta = *obj.ObjectMeta.DeepCopy()
+	return &copy
+}
+
+func TestInspectionFailuresDoNotSuppressUpdates(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  client.Object
+	}{
+		{name: "conversion failure", obj: &unconvertibleObject{Unsupported: make(chan string)}},
+		{name: "conditions are not a list", obj: &unstructured.Unstructured{Object: map[string]interface{}{
+			"status": map[string]interface{}{"conditions": "invalid"},
+		}}},
+		{name: "condition type is not a string", obj: &unstructured.Unstructured{Object: map[string]interface{}{
+			"status": map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": int64(1)}}},
+		}}},
+		{name: "condition is not an object", obj: &unstructured.Unstructured{Object: map[string]interface{}{
+			"status": map[string]interface{}{"conditions": []interface{}{"invalid"}},
+		}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			oldObj := test.obj.DeepCopyObject().(client.Object)
+			newObj := test.obj.DeepCopyObject().(client.Object)
+			_, err := predicates.HasSignificantUpdateWithError(oldObj, newObj)
+			assert.Error(t, err)
+			assert.True(t, predicates.HasSignificantUpdate(oldObj, newObj))
+			pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
+			assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}))
+		})
+	}
+}
 
 func buildTraceParent(traceID, spanID string) string {
 	tp, _ := tracecontext.TraceParentFromIDs(traceID, spanID)

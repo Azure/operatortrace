@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
@@ -20,11 +21,15 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -83,6 +88,157 @@ func traceIDsFromObject(t *testing.T, obj client.Object, opts Options) (string, 
 	spanContext, err := tracecontext.SpanContextFromTraceData(stored.TraceParent, stored.TraceState)
 	require.NoError(t, err)
 	return spanContext.TraceID().String(), spanContext.SpanID().String()
+}
+
+type unconvertibleClientObject struct {
+	corev1.Pod  `json:",inline"`
+	Unsupported chan string `json:"unsupported"`
+}
+
+func (obj *unconvertibleClientObject) DeepCopyObject() runtime.Object {
+	copy := *obj
+	copy.Pod = *obj.Pod.DeepCopy()
+	return &copy
+}
+
+func TestWritesProceedWhenComparisonFails(t *testing.T) {
+	for _, operation := range []string{"update", "patch", "status update", "status patch"} {
+		t.Run(operation, func(t *testing.T) {
+			ctx := context.Background()
+			scheme := runtime.NewScheme()
+			scheme.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &unconvertibleClientObject{})
+			existing := &unconvertibleClientObject{
+				Pod:         corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-object", Namespace: "default", ResourceVersion: "1"}},
+				Unsupported: make(chan string),
+			}
+			writes := 0
+			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					*obj.(*unconvertibleClientObject) = *existing.DeepCopyObject().(*unconvertibleClientObject)
+					return nil
+				},
+				Update: func(context.Context, client.WithWatch, client.Object, ...client.UpdateOption) error {
+					writes++
+					return nil
+				},
+				Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
+					writes++
+					return nil
+				},
+				SubResourceUpdate: func(context.Context, client.Client, string, client.Object, ...client.SubResourceUpdateOption) error {
+					writes++
+					return nil
+				},
+				SubResourcePatch: func(context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption) error {
+					writes++
+					return nil
+				},
+			}).Build()
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			t.Cleanup(func() { require.NoError(t, provider.Shutdown(ctx)) })
+			tracingClient := NewTracingClient(k8sClient, k8sClient, provider.Tracer("test"), logr.Discard(), scheme)
+			desired := existing.DeepCopyObject().(client.Object)
+			desired.(*unconvertibleClientObject).Status.Phase = corev1.PodRunning
+			patch := client.MergeFrom(existing.DeepCopyObject().(client.Object))
+			var err error
+			switch operation {
+			case "update":
+				err = tracingClient.Update(ctx, desired)
+			case "patch":
+				err = tracingClient.Patch(ctx, desired, patch)
+			case "status update":
+				err = tracingClient.Status().Update(ctx, desired)
+			case "status patch":
+				err = tracingClient.Status().Patch(ctx, desired, patch)
+			}
+			require.NoError(t, err)
+			assert.Equal(t, 1, writes)
+			recordedError := false
+			for _, span := range recorder.Ended() {
+				for _, event := range span.Events() {
+					recordedError = recordedError || event.Name == "exception"
+				}
+			}
+			assert.True(t, recordedError, "comparison error must be recorded on the span")
+		})
+	}
+}
+
+func TestSetConditionMessagePreservesDeletionError(t *testing.T) {
+	failure := errors.New("condition conversion failed")
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	conversions := 0
+	require.NoError(t, scheme.AddConversionFunc(&corev1.Pod{}, &corev1.Pod{}, func(from, to interface{}, scope conversion.Scope) error {
+		conversions++
+		if conversions == 1 {
+			return failure
+		}
+		*to.(*corev1.Pod) = *from.(*corev1.Pod).DeepCopy()
+		return nil
+	}))
+	pod := &corev1.Pod{}
+	err := setConditionMessage("TraceID", testTraceIDHex, pod, scheme)
+	require.ErrorIs(t, err, failure)
+	assert.Equal(t, 1, conversions)
+	assert.Empty(t, pod.Status.Conditions)
+}
+
+func TestStatusWritesProceedWhenTraceConditionsFail(t *testing.T) {
+	for _, operation := range []string{"update", "patch", "create"} {
+		t.Run(operation, func(t *testing.T) {
+			ctx := context.Background()
+			failure := errors.New("condition conversion failed")
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
+			require.NoError(t, scheme.AddConversionFunc(&corev1.Pod{}, &corev1.Pod{}, func(interface{}, interface{}, conversion.Scope) error { return failure }))
+			existing := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"}}
+			writes := 0
+			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					*obj.(*corev1.Pod) = *existing.DeepCopy()
+					return nil
+				},
+				SubResourceUpdate: func(context.Context, client.Client, string, client.Object, ...client.SubResourceUpdateOption) error {
+					writes++
+					return nil
+				},
+				SubResourcePatch: func(context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption) error {
+					writes++
+					return nil
+				},
+				SubResourceCreate: func(context.Context, client.Client, string, client.Object, client.Object, ...client.SubResourceCreateOption) error {
+					writes++
+					return nil
+				},
+			}).Build()
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			t.Cleanup(func() { require.NoError(t, provider.Shutdown(ctx)) })
+			tracingClient := NewTracingClient(k8sClient, k8sClient, provider.Tracer("test"), logr.Discard(), scheme)
+			desired := existing.DeepCopy()
+			desired.Status.Phase = corev1.PodRunning
+			var err error
+			switch operation {
+			case "update":
+				err = tracingClient.Status().Update(ctx, desired)
+			case "patch":
+				err = tracingClient.Status().Patch(ctx, desired, client.MergeFrom(existing.DeepCopy()))
+			case "create":
+				err = tracingClient.Status().Create(ctx, desired, &corev1.Pod{})
+			}
+			require.NoError(t, err)
+			assert.Equal(t, 1, writes)
+			recordedError := false
+			for _, span := range recorder.Ended() {
+				for _, event := range span.Events() {
+					recordedError = recordedError || event.Name == "exception"
+				}
+			}
+			assert.True(t, recordedError, "trace-condition failure must be recorded on the span")
+		})
+	}
 }
 
 func TestNewTracingClient(t *testing.T) {
@@ -1227,6 +1383,104 @@ func TestDeleteAllOfWithTracing(t *testing.T) {
 	traceID = span.SpanContext().TraceID().String()
 	assert.NotEmpty(t, traceID)
 
+}
+
+func TestEndTraceInspectionFailuresAreObservable(t *testing.T) {
+	for _, withAnnotations := range []bool{false, true} {
+		t.Run(map[bool]string{false: "before read", true: "after metadata cleanup"}[withAnnotations], func(t *testing.T) {
+			ctx := context.Background()
+			failure := errors.New("condition conversion failed")
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
+			require.NoError(t, scheme.AddConversionFunc(&corev1.Pod{}, &corev1.Pod{}, func(interface{}, interface{}, conversion.Scope) error { return failure }))
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"}}
+			if withAnnotations {
+				annotateObjectWithTraceIDs(t, pod, newOptions(), testTraceIDHex, testSpanIDHex)
+			}
+			reads, metadataWrites, statusWrites := 0, 0, 0
+			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					reads++
+					*obj.(*corev1.Pod) = *pod.DeepCopy()
+					return nil
+				},
+				Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
+					metadataWrites++
+					return nil
+				},
+				SubResourcePatch: func(context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption) error {
+					statusWrites++
+					return nil
+				},
+			}).Build()
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			t.Cleanup(func() { require.NoError(t, provider.Shutdown(ctx)) })
+			tracingClient := NewTracingClient(k8sClient, k8sClient, provider.Tracer("test"), logr.Discard(), scheme)
+			require.NoError(t, tracingClient.EndTrace(ctx, pod.DeepCopy()))
+			assert.Zero(t, statusWrites)
+			if withAnnotations {
+				assert.Equal(t, 1, reads)
+				assert.Equal(t, 1, metadataWrites)
+			} else {
+				assert.Zero(t, reads)
+				assert.Zero(t, metadataWrites)
+			}
+			recordedFailure := false
+			for _, span := range recorder.Ended() {
+				for _, event := range span.Events() {
+					for _, attribute := range event.Attributes {
+						recordedFailure = recordedFailure || attribute.Key == "exception.message" && strings.Contains(attribute.Value.AsString(), failure.Error())
+					}
+				}
+			}
+			assert.True(t, recordedFailure)
+		})
+	}
+}
+
+func TestLegacyTraceConditionInspection(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	failingScheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(failingScheme))
+	require.NoError(t, failingScheme.AddConversionFunc(&corev1.Pod{}, &corev1.Pod{}, func(interface{}, interface{}, conversion.Scope) error {
+		return errors.New("condition conversion failed")
+	}))
+	tests := []struct {
+		name    string
+		obj     client.Object
+		scheme  *runtime.Scheme
+		want    bool
+		wantErr bool
+	}{
+		{name: "no status", obj: &corev1.ConfigMap{}},
+		{name: "no conditions", obj: &corev1.Service{}},
+		{name: "empty conditions", obj: &corev1.Pod{}},
+		{name: "legacy condition", obj: &corev1.Pod{Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: "TraceID"}}}}, want: true},
+		{name: "unregistered type", obj: &corev1.Pod{}, scheme: runtime.NewScheme(), wantErr: true},
+		{name: "conversion failure", obj: &corev1.Pod{}, scheme: failingScheme, wantErr: true},
+		{name: "unregistered unstructured", obj: &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "example.com/v1", "kind": "Example", "status": map[string]interface{}{
+				"conditions": []interface{}{map[string]interface{}{"type": "TraceID"}},
+			},
+		}}, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inspectionScheme := test.scheme
+			if inspectionScheme == nil {
+				inspectionScheme = scheme
+			}
+			found, err := hasLegacyTraceConditions(test.obj, inspectionScheme)
+			assert.Equal(t, test.want, found)
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestGetConditions(t *testing.T) {

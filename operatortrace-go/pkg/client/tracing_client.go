@@ -103,7 +103,10 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 		return err
 	}
 
-	if !predicates.HasSignificantUpdate(existingObj, obj) {
+	if changed, err := predicates.HasSignificantUpdateWithError(existingObj, obj); err != nil {
+		spanPrepare.RecordError(err)
+		tc.Logger.Error(err, "Unable to compare objects, continuing update", "object", obj.GetName())
+	} else if !changed {
 		tc.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}
@@ -223,8 +226,16 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 		span.RecordError(err)
 		return err
 	}
-	if annotationPatch == nil && !hasLegacyTraceConditions(obj, tc.scheme) {
-		return nil
+	if annotationPatch == nil {
+		hasLegacy, err := hasLegacyTraceConditions(obj, tc.scheme)
+		if err != nil {
+			span.RecordError(err)
+			tc.Logger.Error(err, "Unable to inspect legacy trace conditions, skipping status cleanup", "object", obj.GetName())
+			return nil
+		}
+		if !hasLegacy {
+			return nil
+		}
 	}
 
 	// get the current object and ensure that current object has the expected traceid and spanid annotations
@@ -256,7 +267,13 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 		statusObj = obj
 	}
 
-	if !hasLegacyTraceConditions(statusObj, tc.scheme) {
+	hasLegacy, err := hasLegacyTraceConditions(statusObj, tc.scheme)
+	if err != nil {
+		span.RecordError(err)
+		tc.Logger.Error(err, "Unable to inspect legacy trace conditions, skipping status cleanup", "object", obj.GetName())
+		return nil
+	}
+	if !hasLegacy {
 		return nil
 	}
 
@@ -335,7 +352,10 @@ func (tc *tracingClient) Patch(ctx context.Context, obj client.Object, patch cli
 		return err
 	}
 
-	if !predicates.HasSignificantUpdate(existingObj, obj) {
+	if changed, err := predicates.HasSignificantUpdateWithError(existingObj, obj); err != nil {
+		spanPrepare.RecordError(err)
+		tc.Logger.Error(err, "Unable to compare objects, continuing patch", "object", obj.GetName())
+	} else if !changed {
 		tc.Logger.Info("Skipping update as object content has not changed", "object", obj.GetName())
 		return nil
 	}

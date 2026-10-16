@@ -131,10 +131,20 @@ A status-subresource patch is sent only when legacy `TraceID` or `SpanID` condit
 
 When the supplied object has neither owned trace annotations nor legacy trace conditions, `EndTrace` performs no API reads or writes.
 
+Legacy condition cleanup requires a typed object registered in the tracing client's scheme, or an unstructured object convertible to such a type. A type without `Status` or `Conditions` needs no legacy cleanup. Other inspection failures are logged and recorded on the span; `EndTrace` deliberately skips the status write rather than assuming no conditions exist. Unregistered unstructured custom resources can still have their owned trace annotations removed, but their legacy status conditions are not inspected or removed.
+
 ### Update Conflicts
 
 When `Update` falls back to a merge patch because resource versions differ, it excludes differences in Kubernetes `apiVersion` and `kind` while retaining the caller's `resourceVersion` as an optimistic lock. A stale caller still receives a conflict rather than overwriting a newer server version.
 
+### Comparison Failures
+
+`HasSignificantUpdateWithError` returns comparison errors separately from its change result so callers can choose their policy. `HasSignificantUpdate` and the watch predicate conservatively treat failed comparisons as significant and log the failure. The tracing client's normal and status `Update`/`Patch` paths record comparison failures on their spans and attempt the requested write instead of silently skipping it; the underlying write can still return its own error.
+
+Status trace-condition stamping is best-effort for `Create`, `Update`, and `Patch`: condition failures are logged and recorded on the write span, without preventing the requested status operation.
+
 ### Release Notes (Unreleased)
 
 Direct callers of `EndTrace` can now receive safety-read and metadata-patch errors that could previously be swallowed. Legacy status cleanup can also return resource-version conflicts. `AsTracingReconciler` continues to treat cleanup as best-effort and does not return those cleanup errors from reconciliation.
+
+Failed comparisons no longer silently suppress write attempts or watch events. Conversion and condition-inspection failures are exposed to error-aware callers, while the built-in write paths continue the operation and report diagnostics on spans and logs.
