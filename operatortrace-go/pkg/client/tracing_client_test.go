@@ -6,6 +6,8 @@ package client
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/Azure/operatortrace/operatortrace-go/pkg/tracecontext"
@@ -20,11 +22,13 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	ctrlreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -413,6 +417,75 @@ func TestUpdateWithTracing(t *testing.T) {
 	})
 }
 
+func TestUpdateFallbackPreservesTypeMeta(t *testing.T) {
+	tests := []struct {
+		name                  string
+		populatedTypeMeta     bool
+		callerResourceVersion string
+		wantConflict          bool
+	}{
+		{name: "empty caller GVK", callerResourceVersion: "1000"},
+		{name: "populated caller GVK", populatedTypeMeta: true, callerResourceVersion: "1000"},
+		{name: "stale caller conflicts", callerResourceVersion: "999", wantConflict: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			stored := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: "test-configmap", Namespace: "default", ResourceVersion: "1000",
+			}}
+			var patchBody map[string]interface{}
+			patchCalls := 0
+			k8sClient := fake.NewClientBuilder().WithObjects(stored).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if err := underlying.Get(ctx, key, obj, opts...); err != nil {
+						return err
+					}
+					obj.SetResourceVersion("998")
+					obj.GetObjectKind().SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+					return nil
+				},
+				Patch: func(ctx context.Context, underlying client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					patchCalls++
+					data, err := patch.Data(obj)
+					require.NoError(t, err)
+					require.NoError(t, json.Unmarshal(data, &patchBody))
+					return underlying.Patch(ctx, obj, patch, opts...)
+				},
+			}).Build()
+			desired := stored.DeepCopy()
+			desired.ResourceVersion = test.callerResourceVersion
+			desired.Labels = map[string]string{"changed": "true"}
+			if test.populatedTypeMeta {
+				desired.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+			}
+			tracingClient := NewTracingClient(k8sClient, k8sClient, initTracer(), logr.Discard())
+
+			err := tracingClient.Update(ctx, desired)
+			if test.wantConflict {
+				require.True(t, apierrors.IsConflict(err), "expected a resourceVersion conflict, got %v", err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.Equal(t, 1, patchCalls)
+			assert.NotContains(t, patchBody, "apiVersion")
+			assert.NotContains(t, patchBody, "kind")
+			metadata := patchBody["metadata"].(map[string]interface{})
+			assert.Equal(t, test.callerResourceVersion, metadata["resourceVersion"])
+			assert.Equal(t, map[string]interface{}{"changed": "true"}, metadata["labels"])
+			assert.NotEmpty(t, metadata["annotations"])
+			final := &corev1.ConfigMap{}
+			require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(stored), final))
+			if test.wantConflict {
+				assert.Empty(t, final.Labels)
+			} else {
+				assert.Equal(t, desired.Labels, final.Labels)
+			}
+		})
+	}
+}
+
 func TestStartSpan(t *testing.T) {
 	// Create a fake Kubernetes client
 	k8sClient := fake.NewClientBuilder().WithObjects(&corev1.Pod{
@@ -659,6 +732,227 @@ func TestEndTrace(t *testing.T) {
 	assert.Empty(t, finalTraceID)
 	assert.Empty(t, finalSpanID)
 	assert.Equal(t, 1, len(finalPod.Status.Conditions))
+}
+
+func TestEndTraceRemovesOnlyOwnedAnnotations(t *testing.T) {
+	traceParent, err := tracecontext.TraceParentFromIDs(testTraceIDHex, testSpanIDHex)
+	require.NoError(t, err)
+	defaultOpts := newOptions()
+	customOpts := newOptions(WithAnnotationPrefix("example.com"), WithEmittedAnnotationSuffixes("parent", "state"), WithIncomingTraceParentAnnotation("upstream.example.com/parent"))
+	tests := []struct {
+		name        string
+		options     Options
+		annotations map[string]string
+		removedKeys []string
+	}{
+		{
+			name:        "only traceparent",
+			options:     defaultOpts,
+			annotations: map[string]string{defaultOpts.emittedTraceParentAnnotationKey(): traceParent},
+			removedKeys: []string{defaultOpts.emittedTraceParentAnnotationKey()},
+		},
+		{
+			name:    "custom and legacy keys with unrelated annotations",
+			options: customOpts,
+			annotations: map[string]string{
+				customOpts.emittedTraceParentAnnotationKey(): traceParent,
+				customOpts.emittedTraceStateAnnotationKey():  "vendor=value",
+				customOpts.legacyTraceIDAnnotationKey():      testTraceIDHex,
+				customOpts.legacySpanIDAnnotationKey():       testSpanIDHex,
+				customOpts.legacyTraceTimeAnnotationKey():    "2026-10-16T00:00:00Z",
+				"upstream.example.com/parent":                traceParent,
+				"example.com/keep":                           "value",
+			},
+			removedKeys: []string{
+				customOpts.emittedTraceParentAnnotationKey(), customOpts.emittedTraceStateAnnotationKey(),
+				customOpts.legacyTraceIDAnnotationKey(), customOpts.legacySpanIDAnnotationKey(), customOpts.legacyTraceTimeAnnotationKey(),
+			},
+		},
+		{
+			name:    "legacy keys only",
+			options: defaultOpts,
+			annotations: map[string]string{
+				defaultOpts.legacyTraceIDAnnotationKey():   testTraceIDHex,
+				defaultOpts.legacySpanIDAnnotationKey():    testSpanIDHex,
+				defaultOpts.legacyTraceTimeAnnotationKey(): "2026-10-16T00:00:00Z",
+			},
+			removedKeys: []string{defaultOpts.legacyTraceIDAnnotationKey(), defaultOpts.legacySpanIDAnnotationKey(), defaultOpts.legacyTraceTimeAnnotationKey()},
+		},
+		{name: "no annotations", options: defaultOpts},
+		{name: "empty annotations", options: defaultOpts, annotations: map[string]string{}},
+		{name: "unrelated annotations only", options: defaultOpts, annotations: map[string]string{"example.com/keep": "value"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: "test-pod", Namespace: "default", Annotations: test.annotations,
+			}}
+			patchCalls := 0
+			var patchBody map[string]interface{}
+			k8sClient := fake.NewClientBuilder().WithObjects(pod).WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(ctx context.Context, underlying client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					patchCalls++
+					assert.Equal(t, types.MergePatchType, patch.Type())
+					data, err := patch.Data(obj)
+					require.NoError(t, err)
+					require.NoError(t, json.Unmarshal(data, &patchBody))
+					fresh := &corev1.Pod{}
+					require.NoError(t, underlying.Get(ctx, client.ObjectKeyFromObject(obj), fresh))
+					if fresh.Annotations == nil {
+						fresh.Annotations = map[string]string{}
+					}
+					fresh.Annotations["example.com/concurrent"] = "preserved"
+					require.NoError(t, underlying.Update(ctx, fresh))
+					return underlying.Patch(ctx, obj, patch, opts...)
+				},
+			}).Build()
+			tracingClient := newTracingClientWithOptions(k8sClient, k8sClient, initTracer(), logr.Discard(), k8sClient.Scheme(), func(opts *Options) { *opts = test.options })
+			obj := pod.DeepCopy()
+
+			require.NoError(t, tracingClient.EndTrace(ctx, obj))
+
+			final := &corev1.Pod{}
+			require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), final))
+			if len(test.removedKeys) == 0 {
+				assert.Zero(t, patchCalls)
+				assert.Empty(t, patchBody)
+				assert.Len(t, final.Annotations, len(pod.Annotations))
+				for key, value := range pod.Annotations {
+					assert.Equal(t, value, final.Annotations[key])
+				}
+				return
+			}
+			assert.Equal(t, 1, patchCalls)
+			expectedDeleted := map[string]interface{}{}
+			for _, key := range test.removedKeys {
+				expectedDeleted[key] = nil
+				assert.NotContains(t, final.Annotations, key)
+			}
+			assert.Equal(t, map[string]interface{}{"metadata": map[string]interface{}{"annotations": expectedDeleted}}, patchBody)
+			assert.Equal(t, "preserved", final.Annotations["example.com/concurrent"])
+			for key, value := range pod.Annotations {
+				if _, removed := expectedDeleted[key]; !removed {
+					assert.Equal(t, value, final.Annotations[key])
+				}
+			}
+		})
+	}
+}
+
+func TestEndTraceStatusCleanup(t *testing.T) {
+	ready := corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionTrue}
+	traceID := corev1.PodCondition{Type: "TraceID", Status: corev1.ConditionUnknown, Message: testTraceIDHex}
+	spanID := corev1.PodCondition{Type: "SpanID", Status: corev1.ConditionUnknown, Message: testSpanIDHex}
+	tests := []struct {
+		name             string
+		configMap        bool
+		annotations      bool
+		conditions       []corev1.PodCondition
+		wantConditions   []corev1.PodCondition
+		wantStatusWrites int
+	}{
+		{name: "no status subresource", configMap: true, annotations: true},
+		{name: "no status or trace annotations", configMap: true},
+		{name: "empty conditions", annotations: true},
+		{name: "unrelated conditions", annotations: true, conditions: []corev1.PodCondition{ready}, wantConditions: []corev1.PodCondition{ready}},
+		{name: "legacy trace ID without annotations", conditions: []corev1.PodCondition{traceID}, wantStatusWrites: 1},
+		{name: "legacy span ID without annotations", conditions: []corev1.PodCondition{spanID}, wantStatusWrites: 1},
+		{name: "both legacy conditions", annotations: true, conditions: []corev1.PodCondition{traceID, ready, spanID}, wantConditions: []corev1.PodCondition{ready}, wantStatusWrites: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			var obj client.Object = &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-object", Namespace: "default"},
+				Status:     corev1.PodStatus{Conditions: test.conditions},
+			}
+			if test.configMap {
+				obj = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test-object", Namespace: "default"}}
+			}
+			if test.annotations {
+				annotateObjectWithTraceIDs(t, obj, newOptions(), testTraceIDHex, testSpanIDHex)
+			}
+			statusWrites := 0
+			k8sClient := fake.NewClientBuilder().WithObjects(obj).WithInterceptorFuncs(interceptor.Funcs{
+				SubResourcePatch: func(ctx context.Context, underlying client.Client, subResource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+					statusWrites++
+					assert.Equal(t, "status", subResource)
+					if test.wantStatusWrites == 0 {
+						return errors.New("status write is not allowed")
+					}
+					return underlying.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+				},
+			}).Build()
+			tracingClient := NewTracingClient(k8sClient, k8sClient, initTracer(), logr.Discard())
+
+			require.NoError(t, tracingClient.EndTrace(ctx, obj))
+
+			assert.Equal(t, test.wantStatusWrites, statusWrites)
+			final := obj.DeepCopyObject().(client.Object)
+			require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), final))
+			assert.Empty(t, final.GetAnnotations())
+			if pod, ok := final.(*corev1.Pod); ok {
+				if len(test.wantConditions) == 0 {
+					assert.Empty(t, pod.Status.Conditions)
+				} else {
+					assert.Equal(t, test.wantConditions, pod.Status.Conditions)
+				}
+			}
+		})
+	}
+}
+
+func TestEndTraceErrors(t *testing.T) {
+	failure := errors.New("cleanup failed")
+	for _, stage := range []string{"read", "metadata patch", "status patch"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx := context.Background()
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+				Status:     corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: "TraceID", Status: corev1.ConditionUnknown, Message: testTraceIDHex}}},
+			}
+			annotateObjectWithTraceIDs(t, pod, newOptions(), testTraceIDHex, testSpanIDHex)
+			metadataWrites, statusWrites := 0, 0
+			k8sClient := fake.NewClientBuilder().WithObjects(pod).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if stage == "read" {
+						return failure
+					}
+					return underlying.Get(ctx, key, obj, opts...)
+				},
+				Patch: func(ctx context.Context, underlying client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					metadataWrites++
+					if stage == "metadata patch" {
+						return failure
+					}
+					return underlying.Patch(ctx, obj, patch, opts...)
+				},
+				SubResourcePatch: func(ctx context.Context, underlying client.Client, subResource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+					statusWrites++
+					if stage == "status patch" {
+						return failure
+					}
+					return underlying.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+				},
+			}).Build()
+			tracingClient := NewTracingClient(k8sClient, k8sClient, initTracer(), logr.Discard())
+
+			err := tracingClient.EndTrace(ctx, pod)
+
+			require.ErrorIs(t, err, failure)
+			if stage == "read" {
+				assert.Zero(t, metadataWrites)
+			} else {
+				assert.Equal(t, 1, metadataWrites)
+			}
+			if stage == "status patch" {
+				assert.Equal(t, 1, statusWrites)
+			} else {
+				assert.Zero(t, statusWrites)
+			}
+		})
+	}
 }
 
 func TestEndTraceChangedAnnotation(t *testing.T) {

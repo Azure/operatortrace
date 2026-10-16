@@ -92,6 +92,20 @@ func setConditionMessage(conditionType, message string, obj client.Object, schem
 	return setConditionsFromMap(obj, conditions, scheme)
 }
 
+func hasLegacyTraceConditions(obj client.Object, scheme *runtime.Scheme) bool {
+	conditions, err := getConditionsAsMap(obj, scheme)
+	if err != nil {
+		return false
+	}
+	for _, condition := range conditions {
+		conditionType, err := convertToString(condition["Type"])
+		if err == nil && (conditionType == "TraceID" || conditionType == "SpanID") {
+			return true
+		}
+	}
+	return false
+}
+
 func deleteConditionAsMap(conditionType string, obj client.Object, scheme *runtime.Scheme) error {
 	// Retrieve the current conditions as a map
 	conditions, err := getConditionsAsMap(obj, scheme)

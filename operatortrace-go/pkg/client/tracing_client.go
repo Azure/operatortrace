@@ -116,9 +116,10 @@ func (tc *tracingClient) Update(ctx context.Context, obj client.Object, opts ...
 	addTraceAnnotations(ctx, obj, tc.options)
 	tc.Logger.Info("Updating object", "object", obj.GetName())
 
-	// if resource version has changed, and there are no significant updates, we should do a patch instead of an update. This means probably just the traceID has changed / been removed.
+	// If resource versions differ, preserve the caller's version in the patch as an optimistic lock.
 	if existingObj.GetResourceVersion() != obj.GetResourceVersion() {
 		tc.Logger.Info("Resource version has changed, using Patch instead of Update", "object", obj.GetName())
+		existingObj.GetObjectKind().SetGroupVersionKind(obj.GetObjectKind().GroupVersionKind())
 		err = tc.Patch(ctx, obj, client.MergeFrom(existingObj))
 		if err != nil {
 			spanUpdate.RecordError(err)
@@ -216,9 +217,6 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 	defer span.End()
 
 	annotations := obj.GetAnnotations()
-	if annotations == nil {
-		return nil
-	}
 
 	// get the current object and ensure that current object has the expected traceid and spanid annotations
 	currentObjFromServer := obj.DeepCopyObject().(client.Object)
@@ -226,6 +224,7 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 
 	if err != nil {
 		span.RecordError(err)
+		return err
 	}
 
 	// compare the stored trace context from current object to ensure that it has not changed
@@ -237,27 +236,33 @@ func (tc *tracingClient) EndTrace(ctx context.Context, obj client.Object, opts .
 		return nil
 	}
 
-	// Remove the traceid and spanid annotations and create a patch
-	original := obj.DeepCopyObject().(client.Object)
-	patch := client.MergeFrom(original)
-
-	persistTraceCarrier(annotations, tc.options, "", "")
-	obj.SetAnnotations(annotations)
-
-	tc.Logger.Info("Patching object", "object", obj.GetName())
-	// Use the Patch function to apply the patch
-
-	err = tc.Client.Patch(ctx, obj, patch, opts...)
-
+	annotationPatch, err := traceAnnotationRemovalPatch(annotations, tc.options)
 	if err != nil {
 		span.RecordError(err)
+		return err
+	}
+	if annotationPatch != nil {
+		tc.Logger.Info("Patching object", "object", obj.GetName())
+		err = tc.Client.Patch(ctx, obj, annotationPatch, opts...)
+		if err != nil {
+			span.RecordError(err)
+			return err
+		}
 	}
 
-	original = obj.DeepCopyObject().(client.Object)
+	if !hasLegacyTraceConditions(obj, tc.scheme) {
+		return nil
+	}
+
+	original := obj.DeepCopyObject().(client.Object)
 	// remove the traceid and spanid conditions from the object and create a status().patch
-	deleteConditionAsMap("TraceID", obj, tc.scheme)
-	deleteConditionAsMap("SpanID", obj, tc.scheme)
-	patch = client.MergeFrom(original)
+	for _, conditionType := range []string{"TraceID", "SpanID"} {
+		if err := deleteConditionAsMap(conditionType, obj, tc.scheme); err != nil {
+			span.RecordError(err)
+			return err
+		}
+	}
+	patch := client.MergeFrom(original)
 
 	tc.Logger.Info("Patching object status", "object", obj.GetName())
 	err = tc.Client.Status().Patch(ctx, obj, patch)

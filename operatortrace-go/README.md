@@ -122,3 +122,13 @@ func main() {
     }
 } 
 ```
+
+### Trace Cleanup
+
+`EndTrace` removes only the configured emitted traceparent/tracestate annotations and legacy trace-id, span-id, and trace-id-time annotations that are present. It preserves unrelated annotations, including annotations written concurrently, and skips the metadata patch when no owned trace keys are present.
+
+A status-subresource patch is sent only when legacy `TraceID` or `SpanID` conditions need removal. Resources without those conditions do not need status-patch permissions for trace cleanup. Read and patch failures are returned and recorded on the cleanup span.
+
+### Update Conflicts
+
+When `Update` falls back to a merge patch because resource versions differ, it excludes differences in Kubernetes `apiVersion` and `kind` while retaining the caller's `resourceVersion` as an optimistic lock. A stale caller still receives a conflict rather than overwriting a newer server version.
