@@ -288,14 +288,12 @@ func removeTraceAndSpanConditions(statusMap map[string]interface{}) error {
 	for _, condition := range conditions {
 		conditionMap, ok := condition.(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("condition is not an object: %T", condition)
+			filteredConditions = append(filteredConditions, condition)
+			continue
 		}
-		conditionType, found, err := unstructured.NestedString(conditionMap, "type")
+		conditionType, _, err := unstructured.NestedString(conditionMap, "type")
 		if err != nil {
 			return err
-		}
-		if !found {
-			return fmt.Errorf("condition type not found")
 		}
 		if conditionType != "TraceID" && conditionType != "SpanID" {
 			filteredConditions = append(filteredConditions, condition)

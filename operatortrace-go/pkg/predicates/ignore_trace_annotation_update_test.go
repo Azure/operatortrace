@@ -44,9 +44,6 @@ func TestInspectionFailuresDoNotSuppressUpdates(t *testing.T) {
 		{name: "condition type is not a string", obj: &unstructured.Unstructured{Object: map[string]interface{}{
 			"status": map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": int64(1)}}},
 		}}},
-		{name: "condition is not an object", obj: &unstructured.Unstructured{Object: map[string]interface{}{
-			"status": map[string]interface{}{"conditions": []interface{}{"invalid"}},
-		}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -58,6 +55,50 @@ func TestInspectionFailuresDoNotSuppressUpdates(t *testing.T) {
 			pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
 			assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}))
 		})
+	}
+}
+
+func TestOrdinaryConditionsDoNotForceSignificantUpdates(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions []interface{}
+	}{
+		{name: "type-less condition", conditions: []interface{}{map[string]interface{}{"message": "custom state"}}},
+		{name: "scalar condition", conditions: []interface{}{"custom state"}},
+		{name: "mixed trace and ordinary conditions", conditions: []interface{}{
+			map[string]interface{}{"message": "custom state"},
+			"scalar state",
+			map[string]interface{}{"type": "TraceID", "message": "trace"},
+			map[string]interface{}{"type": "SpanID", "message": "span"},
+		}},
+	}
+	for _, test := range tests {
+		for _, change := range []string{"identical", "trace annotations only", "ordinary condition changed"} {
+			t.Run(test.name+"/"+change, func(t *testing.T) {
+				oldObj := &unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "example.com/v1", "kind": "Example",
+					"status": map[string]interface{}{"conditions": test.conditions},
+				}}
+				newObj := oldObj.DeepCopy()
+				if change == "trace annotations only" {
+					newObj.SetAnnotations(map[string]string{
+						constants.DefaultTraceParentAnnotation: buildTraceParent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+					})
+				}
+				wantChanged := change == "ordinary condition changed"
+				if wantChanged {
+					conditions, _, err := unstructured.NestedSlice(newObj.Object, "status", "conditions")
+					assert.NoError(t, err)
+					assert.NoError(t, unstructured.SetNestedSlice(newObj.Object, append(conditions, "new ordinary state"), "status", "conditions"))
+				}
+				changed, err := predicates.HasSignificantUpdateWithError(oldObj, newObj)
+				assert.NoError(t, err)
+				assert.Equal(t, wantChanged, changed)
+				assert.Equal(t, wantChanged, predicates.HasSignificantUpdate(oldObj, newObj))
+				pred := predicates.TypedIgnoreTraceAnnotationUpdatePredicate[client.Object]{}
+				assert.Equal(t, wantChanged, pred.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}))
+			})
+		}
 	}
 }
 

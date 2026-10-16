@@ -141,6 +141,8 @@ When `Update` falls back to a merge patch because resource versions differ, it e
 
 `HasSignificantUpdateWithError` returns comparison errors separately from its change result so callers can choose their policy. `HasSignificantUpdate` and the watch predicate conservatively treat failed comparisons as significant and log the failure. The tracing client's normal and status `Update`/`Patch` paths record comparison failures on their spans and attempt the requested write instead of silently skipping it; the underlying write can still return its own error.
 
+Conditions without a `type` field and non-object condition entries remain ordinary status data during comparison. They do not force unchanged or trace-annotation-only updates to be treated as significant; changes to that ordinary data are still detected.
+
 Status trace-condition stamping is best-effort for `Create`, `Update`, and `Patch`: condition failures are logged and recorded on the write span, without preventing the requested status operation.
 
 ### Release Notes (Unreleased)
